@@ -1,6 +1,5 @@
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services;
-using ContentWriter.Application.Services.Batch;
 using ContentWriter.Application.Services.JsonLd;
 using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
@@ -66,9 +65,6 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IGeekBackendClient, GeekBackendClient>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
-
-        services.AddScoped<IBatchPipelineRunner, BatchPipelineRunner>();
-        services.AddHostedService<BatchWorker>();
 
         return services;
     }

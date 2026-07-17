@@ -8,7 +8,7 @@ todos:
     content: "Add Client + PublishTarget entities, ClientId on Project, seed Geek At Your Spot client"
     status: pending
   - id: "v2-batch"
-    content: "BatchJob/BatchJobItem + BackgroundService worker with resumable per-step pipeline and batch API endpoints"
+    content: "DESCOPED (2026-07-17): blocked on missing research-input scraper, see note in Phase 3 below."
     status: pending
   - id: "v2-parallel"
     content: "Parallelize tool pages and social posts within a project; concurrency caps across projects"
@@ -42,7 +42,8 @@ isProject: false
 These are decisions with rationale, recorded in a `DECISIONS.md` in the v2 repo — phrased as "proposed and vetoed/retired for this pipeline," not as absolute bans, since client work may legitimately revisit them:
 
 - **Markdown export — retired.** v1's `ContentMarkdownExportService`/YAML-frontmatter flow was replaced by direct publish to GeekBackend. Not ported to v2; documented as retired with the reason (publish API superseded it).
-- **ContentFigures image model — proposed and vetoed.** Content Writer's scope ends at generating **image prompts** (one per `<h2>` section and its paragraphs), stored as plain content rows with no status/lifecycle/`ImageUrl` tracking. Image generation and image state belong to SectionFigures (or any consumer), which reads prompts over the HTTP API — no DB coupling. Rename any ported "figure" naming to "image prompt" so the old status model doesn't creep back in.
+- **ContentFigures image model — proposed and vetoed.** Content Writer's scope ends at generating **image prompts** (one per `<h2>` section and its paragraphs), stored as plain content rows with no status/lifecycle/`ImageUrl` tracking. Image generation and image state belong to a standalone consumer reading prompts over the HTTP API — no DB coupling. Rename any ported "figure" naming to "image prompt" so the old status model doesn't creep back in.
+  - **Status (2026-07-17): built.** The consumer is `image-generator` (`~/development/image-generator`, Next.js, `POST /api/generate`) — takes a finished prompt + `useCase`/`provider`/dimensions, calls OpenAI and/or Leonardo, returns image bytes. It has no dependency on Content Writer's database or code. The old `ContentImageSpike` console spike (`backend/tools/ContentImageSpike`) that this was ported from has been deleted from this repo — its OpenAI/Leonardo HTTP calls now live only in `image-generator`.
 - **`NewsArticle` — supported by GeekBackend, unused by this pipeline.** GeekBackend parses it and it is a valid schema.org type; the Geek pipeline currently produces only `TechnicalArticle`, `BlogPosting`, and `SoftwareApplication`. v2 doesn't generate NewsArticle content, but nothing forbids adding it for a client that needs it — the schema-type list stays extensible.
 
 ## Standing policies (apply across all phases)
@@ -81,13 +82,27 @@ flowchart LR
 - `categoryStrategy` pinned to the existing department-based URL convention (`use-cases/{dept}`, `blog/{dept}`, `tools/{dept}`) as the default; free-form only if a specific client needs a different shape.
 - Seed one client "Geek At Your Spot" wired to the existing GeekBackend so v2 testing mirrors v1 behavior.
 
-## Phase 3 — Batch pipeline + parallelism
+## Phase 3 — Batch pipeline + parallelism — DESCOPED (2026-07-17)
 
-- `BatchJob` (status, counts) + `BatchJobItem` (one per target keyword: status per step — crawl, plan, body, tools, blog, social, email, image prompts, review, publish; error text; timings).
-- DB-backed queue + `BackgroundService` worker (no Hangfire): poll for queued items, run full pipeline detached from HTTP, `SemaphoreSlim` cap on concurrent projects (config, default 2) plus the separate global LLM-call cap from the standing policies.
-- Inside a project: tool pages and social posts generate via `Task.WhenAll` (slugs pre-assigned; rows added to DbContext only on the worker thread after tasks complete — each project pipeline owns its scoped DbContext).
-- API: `POST /api/batches` (list of keywords + client), `GET /api/batches/{id}` progress, cancel endpoint.
-- Resumable: re-running a failed item skips completed steps — completion is judged by row **completeness** (expected row counts and non-empty required fields per step), not mere row existence, so a crash mid-write cannot cause resume to silently skip a truncated step.
+Built, then pulled back out. Generation (`ContentGenerationOrchestrator.LoadProjectForGenerationAsync`)
+hard-requires at least one uploaded `KeywordSource` per project — a research doc (SERP result,
+wiki/gov/edu page, competitor crawl, People-Also-Asked dump) — on top of the site crawl. In v1 this
+was always a manual upload through `KeywordSourcesController`, one file at a time.
+
+The batch-first premise assumed an "existing SERP scraper" would supply this automatically. It
+doesn't exist: no scraper was found in `content-writer` (v1), `content-writer-v2`, or any sibling
+repo — `KeywordSource`'s own doc comment confirms the input is "manually-scraped." Discovered when
+the first real batch smoke test ran crawl successfully, then failed the Plan step exactly on this
+gate. Automated batch generation cannot proceed without either a real scraper (net-new build, not a
+port) or relaxing this requirement — both undecided as of this descope.
+
+What was built and works, kept in the codebase but not wired to a real research pipeline:
+`BatchJob`/`BatchJobItem`/`BatchJobItemStep` entities, `BatchWorker` (DB-backed queue,
+`BackgroundService`, `SemaphoreSlim` project-concurrency cap), `LlmConcurrencyGate` (global LLM-call
+cap per the standing policy), `BatchPipelineRunner` (per-step resumability via row-completeness
+checks, not trusted status flags), `POST/GET/cancel /api/batches` endpoints. Tools/Blog/Social
+concurrency via `Task.WhenAll` with per-task DI scopes is implemented and untested beyond the Crawl
+step, since nothing downstream of Plan has run yet.
 
 ## Phase 4 — AI editorial review
 

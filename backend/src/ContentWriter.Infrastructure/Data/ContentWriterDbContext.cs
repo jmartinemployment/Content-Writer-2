@@ -25,9 +25,6 @@ public class ContentWriterDbContext : DbContext
     public DbSet<GeneratedContent> GeneratedContents => Set<GeneratedContent>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<PublishTarget> PublishTargets => Set<PublishTarget>();
-    public DbSet<BatchJob> BatchJobs => Set<BatchJob>();
-    public DbSet<BatchJobItem> BatchJobItems => Set<BatchJobItem>();
-    public DbSet<BatchJobItemStep> BatchJobItemSteps => Set<BatchJobItemStep>();
 
     private static string JoinList(List<string> values) => string.Join(ListSeparator[0], values);
 
@@ -120,46 +117,6 @@ public class ContentWriterDbContext : DbContext
                   .HasConversion(v => JoinList(v), v => SplitList(v), StringListComparer);
             entity.Property(g => g.SectionOutline)
                   .HasConversion(v => JoinList(v), v => SplitList(v), StringListComparer);
-        });
-
-        modelBuilder.Entity<BatchJob>(entity =>
-        {
-            entity.HasKey(b => b.Id);
-
-            entity.HasOne(b => b.Client)
-                  .WithMany()
-                  .HasForeignKey(b => b.ClientId)
-                  .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasMany(b => b.Items)
-                  .WithOne(i => i.BatchJob)
-                  .HasForeignKey(i => i.BatchJobId)
-                  .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<BatchJobItem>(entity =>
-        {
-            entity.HasKey(i => i.Id);
-            entity.Property(i => i.TargetKeyword).HasMaxLength(256).IsRequired();
-            entity.Property(i => i.ProjectUrl).HasMaxLength(2048).IsRequired();
-            entity.Property(i => i.ErrorText);
-
-            entity.HasOne(i => i.Project)
-                  .WithMany()
-                  .HasForeignKey(i => i.ProjectId)
-                  .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasMany(i => i.Steps)
-                  .WithOne(s => s.BatchJobItem)
-                  .HasForeignKey(s => s.BatchJobItemId)
-                  .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<BatchJobItemStep>(entity =>
-        {
-            entity.HasKey(s => s.Id);
-            entity.Property(s => s.ErrorText);
-            entity.HasIndex(s => new { s.BatchJobItemId, s.StepName }).IsUnique();
         });
     }
 }
