@@ -4,6 +4,7 @@ using ContentWriter.Application.Services.JsonLd;
 using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.SchemaBuilders;
+using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 using ContentWriter.Infrastructure.Data;
 using ContentWriter.Infrastructure.Repositories;
@@ -33,7 +34,6 @@ public static class ContentWriterServiceRegistration
 
         services.Configure<LlmProvidersOptions>(configuration.GetSection(LlmProvidersOptions.SectionName));
         services.Configure<CompanyProfileOptions>(configuration.GetSection(CompanyProfileOptions.SectionName));
-        services.Configure<GeekBackendOptions>(configuration.GetSection(GeekBackendOptions.SectionName));
 
         services.AddHttpClient<LmStudioProvider>();
         services.AddHttpClient<OpenAiProvider>();
@@ -55,7 +55,8 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IBlogPostingSchemaBuilder, BlogPostingSchemaBuilder>();
         services.AddScoped<IToolPageGenerator, ToolPageGenerator>();
         services.AddScoped<IContentGenerationOrchestrator, ContentGenerationOrchestrator>();
-        services.AddHttpClient<IGeekBackendClient, GeekBackendClient>();
+        services.AddHttpClient("GeekBackend");
+        services.AddScoped<IGeekBackendClient, GeekBackendClient>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
 
@@ -75,6 +76,8 @@ public static class ContentWriterServiceRegistration
         {
             await db.Database.MigrateAsync(cancellationToken);
             logger.LogInformation("Content Writer database ready.");
+
+            await SeedDefaultClientAsync(db, logger, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -82,6 +85,33 @@ public static class ContentWriterServiceRegistration
             if (!app.Environment.IsDevelopment())
                 throw;
         }
+    }
+
+    /// <summary>
+    /// Idempotent: seeds the "Geek At Your Spot" client wired to the existing GeekBackend on first
+    /// run only, so v2 testing mirrors v1 behavior. DefaultAuthorId is left unset — publish fails
+    /// with a clear error until an operator sets it via PUT /api/clients/{id}/publish-target.
+    /// </summary>
+    private static async Task SeedDefaultClientAsync(
+        ContentWriterDbContext db, ILogger logger, CancellationToken cancellationToken)
+    {
+        const string DefaultClientName = "Geek At Your Spot";
+
+        if (await db.Clients.AnyAsync(cancellationToken))
+            return;
+
+        var client = new Client { Name = DefaultClientName };
+        client.PublishTarget = new PublishTarget
+        {
+            ClientId = client.Id,
+            GeekBackendApiBaseUrl = "https://api.geekatyourspot.com",
+            ApiKeyEnvVar = "GEEKATYOURSPOT_API_KEY",
+            CategoryStrategy = CategoryStrategy.DepartmentBased,
+        };
+
+        db.Clients.Add(client);
+        await db.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Seeded default client '{ClientName}' ({ClientId}).", DefaultClientName, client.Id);
     }
 }
 

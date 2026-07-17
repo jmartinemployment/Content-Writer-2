@@ -3,14 +3,14 @@ using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Api.Contracts;
 
-public record CreateProjectRequest(string Name, string ProjectUrl, string TargetKeyword, LlmProviderType PreferredProvider);
+public record CreateProjectRequest(Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, LlmProviderType PreferredProvider);
 
 public record ProjectSummaryResponse(
-    Guid Id, string Name, string ProjectUrl, string TargetKeyword,
+    Guid Id, Guid ClientId, string Name, string ProjectUrl, string TargetKeyword,
     ProjectStatus Status, LlmProviderType PreferredProvider, DateTime CreatedAtUtc);
 
 public record ProjectDetailResponse(
-    Guid Id, string Name, string ProjectUrl, string TargetKeyword, ProjectStatus Status,
+    Guid Id, Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, ProjectStatus Status,
     LlmProviderType PreferredProvider, CrawlSummaryResponse? Crawl,
     List<KeywordSourceResponse> KeywordSources, List<GeneratedContentResponse> GeneratedContent,
     GeneratedContentSet? ContentSet);

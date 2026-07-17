@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services.Export;
+using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 using ContentWriter.Infrastructure.Repositories;
 using Microsoft.Extensions.Logging;
@@ -39,20 +40,17 @@ public class GeekBlogPublishService : IGeekBlogPublishService
     private readonly IProjectRepository _projectRepository;
     private readonly IGeekBackendClient _geekBackendClient;
     private readonly CompanyProfileOptions _companyProfile;
-    private readonly GeekBackendOptions _geekBackendOptions;
     private readonly ILogger<GeekBlogPublishService> _logger;
 
     public GeekBlogPublishService(
         IProjectRepository projectRepository,
         IGeekBackendClient geekBackendClient,
         IOptions<CompanyProfileOptions> companyProfile,
-        IOptions<GeekBackendOptions> geekBackendOptions,
         ILogger<GeekBlogPublishService> logger)
     {
         _projectRepository = projectRepository;
         _geekBackendClient = geekBackendClient;
         _companyProfile = companyProfile.Value;
-        _geekBackendOptions = geekBackendOptions.Value;
         _logger = logger;
     }
 
@@ -61,15 +59,13 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         string? departmentOverride = null,
         CancellationToken cancellationToken = default)
     {
-        if (_geekBackendOptions.DefaultAuthorId is null)
-        {
-            throw new ContentGenerationException(
-                "GeekBackend:DefaultAuthorId is not configured. geek_blog.posts.author_id is required " +
-                "— set it to a seeded geek_blog.users.id before publishing.");
-        }
-
         var project = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
+
+        var client = project.Client
+            ?? throw new ContentGenerationException($"Project {project.Id} has no Client assigned.");
+
+        var target = PublishTargetResolver.Resolve(client);
 
         var contentSet = GeneratedContentSetAssembler.Assemble(
             project,
@@ -88,6 +84,7 @@ public class GeekBlogPublishService : IGeekBlogPublishService
             && !string.IsNullOrWhiteSpace(contentSet.ArticleSlug))
         {
             published.Add(await PublishOneAsync(
+                target: target,
                 contentType: "pillar",
                 postType: "Pillar",
                 schemaType: "TechnicalArticle",
@@ -114,6 +111,7 @@ public class GeekBlogPublishService : IGeekBlogPublishService
             && !string.IsNullOrWhiteSpace(contentSet.BlogSlug))
         {
             published.Add(await PublishOneAsync(
+                target: target,
                 contentType: "blog",
                 postType: "Blog",
                 schemaType: "BlogPosting",
@@ -144,6 +142,7 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         foreach (var toolRow in toolRows)
         {
             published.Add(await PublishOneAsync(
+                target: target,
                 contentType: "tool",
                 postType: "Tool",
                 schemaType: "SoftwareApplication",
@@ -174,6 +173,7 @@ public class GeekBlogPublishService : IGeekBlogPublishService
     }
 
     private async Task<GeekBlogPublishedPost> PublishOneAsync(
+        PublishTargetContext target,
         string contentType,
         string postType,
         string schemaType,
@@ -220,14 +220,14 @@ public class GeekBlogPublishService : IGeekBlogPublishService
             JsonLdOverride: jsonLdOverride,
             Sections: sections,
             TagSlugs: [categorySlug],
-            AuthorId: _geekBackendOptions.DefaultAuthorId,
+            AuthorId: target.DefaultAuthorId,
             PublishedAt: publishedAt,
             CategorySlug: categorySlug,
             Presentation: null,
             CwJobId: cwJobId);
 
-        var existingPostId = await _geekBackendClient.FindExistingPostIdAsync(slug, DefaultLanguageCode, cancellationToken);
-        var result = await _geekBackendClient.UpsertPostAsync(payload, existingPostId, cancellationToken);
+        var existingPostId = await _geekBackendClient.FindExistingPostIdAsync(target, slug, DefaultLanguageCode, cancellationToken);
+        var result = await _geekBackendClient.UpsertPostAsync(target, payload, existingPostId, cancellationToken);
 
         _logger.LogInformation(
             "Published {ContentType} {Slug} to GeekBackend as post {PostId} ({Action}, {SectionCount} sections)",

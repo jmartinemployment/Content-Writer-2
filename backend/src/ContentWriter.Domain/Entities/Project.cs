@@ -5,6 +5,7 @@ namespace ContentWriter.Domain.Entities;
 public class Project
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ClientId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string ProjectUrl { get; set; } = string.Empty;
     public string TargetKeyword { get; set; } = string.Empty;
@@ -14,6 +15,7 @@ public class Project
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 
+    public Client? Client { get; set; }
     public CrawledSite? CrawledSite { get; set; }
     public List<KeywordSource> KeywordSources { get; set; } = new();
     public List<GeneratedContent> GeneratedContents { get; set; } = new();

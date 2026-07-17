@@ -23,6 +23,11 @@ public class ProjectsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ProjectSummaryResponse>> Create([FromBody] CreateProjectRequest request, CancellationToken cancellationToken)
     {
+        if (request.ClientId == Guid.Empty)
+        {
+            return BadRequest("ClientId is required.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.ProjectUrl) || !Uri.IsWellFormedUriString(request.ProjectUrl, UriKind.Absolute))
         {
             return BadRequest("ProjectUrl must be a valid absolute URL.");
@@ -38,6 +43,7 @@ public class ProjectsController : ControllerBase
 
         var project = new Project
         {
+            ClientId = request.ClientId,
             Name = request.Name,
             ProjectUrl = request.ProjectUrl,
             TargetKeyword = request.TargetKeyword,
@@ -88,11 +94,11 @@ public class ProjectsController : ControllerBase
                 project, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
 
         return Ok(new ProjectDetailResponse(
-            project.Id, project.Name, project.ProjectUrl, project.TargetKeyword, project.Status,
+            project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Status,
             project.PreferredProvider, crawl, keywordSources, generatedContent, contentSet));
     }
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(
-        project.Id, project.Name, project.ProjectUrl, project.TargetKeyword,
+        project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword,
         project.Status, project.PreferredProvider, project.CreatedAtUtc);
 }

@@ -44,3 +44,13 @@ public enum GeneratedContentType
     ImagePromptSection = 11,
     ToolPost = 12
 }
+
+/// <summary>How a client's published URLs are grouped into categories/departments.</summary>
+public enum CategoryStrategy
+{
+    /// <summary>use-cases/{dept}, blog/{dept}, tools/{dept} — the existing Geek At Your Spot convention.</summary>
+    DepartmentBased = 0,
+
+    /// <summary>Client supplies category slugs directly, no department convention assumed.</summary>
+    FreeForm = 1
+}

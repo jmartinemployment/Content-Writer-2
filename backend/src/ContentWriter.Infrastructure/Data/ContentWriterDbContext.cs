@@ -23,6 +23,8 @@ public class ContentWriterDbContext : DbContext
     public DbSet<CrawledSite> CrawledSites => Set<CrawledSite>();
     public DbSet<KeywordSource> KeywordSources => Set<KeywordSource>();
     public DbSet<GeneratedContent> GeneratedContents => Set<GeneratedContent>();
+    public DbSet<Client> Clients => Set<Client>();
+    public DbSet<PublishTarget> PublishTargets => Set<PublishTarget>();
 
     private static string JoinList(List<string> values) => string.Join(ListSeparator[0], values);
 
@@ -33,12 +35,36 @@ public class ContentWriterDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema(ContentWriterDbContextOptionsExtensions.SchemaName);
 
+        modelBuilder.Entity<Client>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Name).HasMaxLength(256).IsRequired();
+
+            entity.HasOne(c => c.PublishTarget)
+                  .WithOne(t => t.Client)
+                  .HasForeignKey<PublishTarget>(t => t.ClientId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PublishTarget>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.GeekBackendApiBaseUrl).HasMaxLength(2048).IsRequired();
+            entity.Property(t => t.ApiKeyEnvVar).HasMaxLength(256).IsRequired();
+            entity.HasIndex(t => t.ClientId).IsUnique();
+        });
+
         modelBuilder.Entity<Project>(entity =>
         {
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Name).HasMaxLength(256).IsRequired();
             entity.Property(p => p.ProjectUrl).HasMaxLength(2048).IsRequired();
             entity.Property(p => p.TargetKeyword).HasMaxLength(256);
+
+            entity.HasOne(p => p.Client)
+                  .WithMany(c => c.Projects)
+                  .HasForeignKey(p => p.ClientId)
+                  .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(p => p.CrawledSite)
                   .WithOne(c => c.Project)

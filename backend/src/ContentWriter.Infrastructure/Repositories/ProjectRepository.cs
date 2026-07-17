@@ -13,6 +13,8 @@ public class ProjectRepository : Repository<Project>, IProjectRepository
 
     public async Task<Project?> GetWithDetailsAsync(Guid projectId, CancellationToken cancellationToken = default)
         => await DbSet
+            .Include(p => p.Client)
+                .ThenInclude(c => c!.PublishTarget)
             .Include(p => p.CrawledSite)
             .Include(p => p.KeywordSources)
             .Include(p => p.GeneratedContents)

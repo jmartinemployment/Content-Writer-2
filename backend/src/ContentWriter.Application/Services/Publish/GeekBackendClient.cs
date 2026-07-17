@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Options;
 
 namespace ContentWriter.Application.Services.Publish;
 
@@ -39,22 +38,33 @@ public sealed record GeekBlogPostPayload(
 
 public sealed record GeekBlogPostResult(int PostId, string Slug, string LanguageCode, int SectionCount, bool WasUpdated);
 
+/// <summary>Resolved per-client connection details for a single publish call — never persisted, built fresh from PublishTarget + env var lookup.</summary>
+public sealed record PublishTargetContext(string ApiBaseUrl, string ApiKey, int? DefaultAuthorId);
+
 /// <summary>HTTP client for GeekBackend's blog API (GeekAPI, `api/blog`). Auth mirrors ImportBlogContent's `X-API-Key` header pattern.</summary>
 public interface IGeekBackendClient
 {
-    Task<int?> FindExistingPostIdAsync(string slug, string languageCode, CancellationToken cancellationToken = default);
+    Task<int?> FindExistingPostIdAsync(
+        PublishTargetContext target, string slug, string languageCode, CancellationToken cancellationToken = default);
 
     Task<GeekBlogPostResult> UpsertPostAsync(
+        PublishTargetContext target,
         GeekBlogPostPayload payload,
         int? existingPostId,
         CancellationToken cancellationToken = default);
 
-    Task<JsonElement> GetCategoriesAsync(string lang, CancellationToken cancellationToken = default);
+    Task<JsonElement> GetCategoriesAsync(PublishTargetContext target, string lang, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Base address varies per call (each client has its own GeekBackend target), so this uses
+/// <see cref="IHttpClientFactory"/> and builds absolute URIs per request rather than a typed
+/// client with a fixed BaseAddress — safe under the multi-project concurrency in Phase 3.
+/// </summary>
 public sealed class GeekBackendClient : IGeekBackendClient
 {
     private const string ApiKeyHeader = "X-API-Key";
+    private const string HttpClientName = "GeekBackend";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -62,25 +72,24 @@ public sealed class GeekBackendClient : IGeekBackendClient
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private readonly HttpClient _http;
-    private readonly GeekBackendOptions _options;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public GeekBackendClient(HttpClient http, IOptions<GeekBackendOptions> options)
+    public GeekBackendClient(IHttpClientFactory httpClientFactory)
     {
-        _options = options.Value;
-        http.BaseAddress = new Uri(_options.ApiBaseUrl.TrimEnd('/') + "/");
-        _http = http;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<int?> FindExistingPostIdAsync(
+        PublishTargetContext target,
         string slug,
         string languageCode,
         CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/blog/{languageCode}/{slug}");
-        request.Headers.Add(ApiKeyHeader, _options.ApiKey);
+        var http = _httpClientFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(target, $"api/blog/{languageCode}/{slug}"));
+        request.Headers.Add(ApiKeyHeader, target.ApiKey);
 
-        var response = await _http.SendAsync(request, cancellationToken);
+        var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
 
@@ -91,19 +100,21 @@ public sealed class GeekBackendClient : IGeekBackendClient
     }
 
     public async Task<GeekBlogPostResult> UpsertPostAsync(
+        PublishTargetContext target,
         GeekBlogPostPayload payload,
         int? existingPostId,
         CancellationToken cancellationToken = default)
     {
+        var http = _httpClientFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(
             existingPostId is null ? HttpMethod.Post : HttpMethod.Put,
-            existingPostId is null ? "api/blog" : $"api/blog/{existingPostId}")
+            existingPostId is null ? BuildUri(target, "api/blog") : BuildUri(target, $"api/blog/{existingPostId}"))
         {
             Content = JsonContent.Create(payload, options: JsonOptions),
         };
-        request.Headers.Add(ApiKeyHeader, _options.ApiKey);
+        request.Headers.Add(ApiKeyHeader, target.ApiKey);
 
-        var response = await _http.SendAsync(request, cancellationToken);
+        var response = await http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -122,16 +133,21 @@ public sealed class GeekBackendClient : IGeekBackendClient
         return new GeekBlogPostResult(postId, slug, languageCode, sectionCount, existingPostId is not null);
     }
 
-    public async Task<JsonElement> GetCategoriesAsync(string lang, CancellationToken cancellationToken = default)
+    public async Task<JsonElement> GetCategoriesAsync(
+        PublishTargetContext target, string lang, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/blog/categories?lang={lang}");
-        request.Headers.Add(ApiKeyHeader, _options.ApiKey);
+        var http = _httpClientFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(target, $"api/blog/categories?lang={lang}"));
+        request.Headers.Add(ApiKeyHeader, target.ApiKey);
 
-        var response = await _http.SendAsync(request, cancellationToken);
+        var response = await http.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
     }
+
+    private static Uri BuildUri(PublishTargetContext target, string relativePath) =>
+        new(target.ApiBaseUrl.TrimEnd('/') + "/" + relativePath.TrimStart('/'));
 }
 
 public sealed class GeekBackendPublishException(string message) : Exception(message);
