@@ -1,0 +1,29 @@
+using ContentWriter.Application.DTOs;
+using ContentWriter.Domain.Enums;
+
+namespace ContentWriter.Api.Contracts;
+
+public record CreateProjectRequest(string Name, string ProjectUrl, string TargetKeyword, LlmProviderType PreferredProvider);
+
+public record ProjectSummaryResponse(
+    Guid Id, string Name, string ProjectUrl, string TargetKeyword,
+    ProjectStatus Status, LlmProviderType PreferredProvider, DateTime CreatedAtUtc);
+
+public record ProjectDetailResponse(
+    Guid Id, string Name, string ProjectUrl, string TargetKeyword, ProjectStatus Status,
+    LlmProviderType PreferredProvider, CrawlSummaryResponse? Crawl,
+    List<KeywordSourceResponse> KeywordSources, List<GeneratedContentResponse> GeneratedContent,
+    GeneratedContentSet? ContentSet);
+
+public record CrawlSummaryResponse(
+    string SiteName, int PagesCrawled, string DetectedTone, string DetectedFocus,
+    int HeadingCount, int ParagraphCount, int JsonLdBlockCount);
+
+public record KeywordSourceResponse(
+    Guid Id, KeywordSourceCategory Category, string OriginalFileName,
+    string? ExtractedTitle, int HeadingCount, int ParagraphCount, int QuestionCount);
+
+public record GeneratedContentResponse(
+    Guid Id, GeneratedContentType ContentType, string Title, string Slug,
+    string? MetaDescription, IReadOnlyList<string> Keywords, int WordCount,
+    string BodyHtml, string? JsonLdSchema, string? RelatedArticleUrl, DateTime CreatedAtUtc);
