@@ -54,3 +54,49 @@ public enum CategoryStrategy
     /// <summary>Client supplies category slugs directly, no department convention assumed.</summary>
     FreeForm = 1
 }
+
+public enum BatchJobStatus
+{
+    Queued = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Cancelled = 4
+}
+
+public enum BatchJobItemStatus
+{
+    Queued = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Cancelled = 4
+}
+
+/// <summary>
+/// Pipeline steps a batch item passes through, in order. Tools, Blog, and Social run concurrently
+/// via Task.WhenAll (see BatchWorker) despite having distinct enum values here — each still gets
+/// its own tracked row since they can fail/retry independently.
+/// </summary>
+public enum BatchStepName
+{
+    Crawl = 0,
+    Plan = 1,
+    Body = 2,
+    Tools = 3,
+    Blog = 4,
+    Social = 5,
+    Email = 6,
+    ImagePrompts = 7,
+    Review = 8,
+    Publish = 9
+}
+
+public enum BatchStepStatus
+{
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Skipped = 4
+}

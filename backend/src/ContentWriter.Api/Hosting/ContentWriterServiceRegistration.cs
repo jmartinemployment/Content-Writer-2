@@ -1,5 +1,6 @@
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services;
+using ContentWriter.Application.Services.Batch;
 using ContentWriter.Application.Services.JsonLd;
 using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
@@ -39,12 +40,18 @@ public static class ContentWriterServiceRegistration
         services.AddHttpClient<OpenAiProvider>();
         services.AddHttpClient<AnthropicProvider>();
 
+        var maxConcurrentLlmCalls = configuration.GetValue<int?>("LlmProviders:MaxConcurrentCalls") ?? 4;
+        services.AddSingleton(new LlmConcurrencyGate(maxConcurrentLlmCalls));
+
         services.AddKeyedTransient<IContentGenerationProvider>(LlmProviderType.LmStudio,
-            (sp, _) => sp.GetRequiredService<LmStudioProvider>());
+            (sp, _) => new ConcurrencyLimitingContentGenerationProvider(
+                sp.GetRequiredService<LmStudioProvider>(), sp.GetRequiredService<LlmConcurrencyGate>()));
         services.AddKeyedTransient<IContentGenerationProvider>(LlmProviderType.OpenAi,
-            (sp, _) => sp.GetRequiredService<OpenAiProvider>());
+            (sp, _) => new ConcurrencyLimitingContentGenerationProvider(
+                sp.GetRequiredService<OpenAiProvider>(), sp.GetRequiredService<LlmConcurrencyGate>()));
         services.AddKeyedTransient<IContentGenerationProvider>(LlmProviderType.Anthropic,
-            (sp, _) => sp.GetRequiredService<AnthropicProvider>());
+            (sp, _) => new ConcurrencyLimitingContentGenerationProvider(
+                sp.GetRequiredService<AnthropicProvider>(), sp.GetRequiredService<LlmConcurrencyGate>()));
 
         services.AddScoped<IContentProviderFactory, ContentProviderFactory>();
         services.AddHttpClient<ISiteCrawlerService, SiteCrawlerService>();
@@ -59,6 +66,9 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IGeekBackendClient, GeekBackendClient>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
+
+        services.AddScoped<IBatchPipelineRunner, BatchPipelineRunner>();
+        services.AddHostedService<BatchWorker>();
 
         return services;
     }
