@@ -18,6 +18,7 @@ public class ProjectRepository : Repository<Project>, IProjectRepository
             .Include(p => p.CrawledSite)
             .Include(p => p.KeywordSources)
             .Include(p => p.GeneratedContents)
+                .ThenInclude(g => g.ReviewVerdicts)
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
 

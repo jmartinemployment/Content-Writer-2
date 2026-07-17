@@ -54,3 +54,12 @@ public enum CategoryStrategy
     /// <summary>Client supplies category slugs directly, no department convention assumed.</summary>
     FreeForm = 1
 }
+
+public enum ReviewVerdictStatus
+{
+    Approved = 0,
+    Revise = 1,
+
+    /// <summary>Hit the 3-attempt cap without reaching Approved — needs an operator, not another auto-retry.</summary>
+    Exhausted = 2
+}

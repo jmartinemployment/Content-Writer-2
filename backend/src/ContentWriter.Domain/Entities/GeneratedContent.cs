@@ -64,4 +64,6 @@ public class GeneratedContent
     public string GeneratedByModel { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public List<ReviewVerdict> ReviewVerdicts { get; set; } = new();
 }

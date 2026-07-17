@@ -3,6 +3,7 @@ using ContentWriter.Application.Services;
 using ContentWriter.Application.Services.JsonLd;
 using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
+using ContentWriter.Application.Services.Review;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
@@ -65,6 +66,9 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IGeekBackendClient, GeekBackendClient>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
+
+        services.AddScoped<IEditorialReviewService, EditorialReviewService>();
+        services.AddScoped<IReviewLoopService, ReviewLoopService>();
 
         return services;
     }

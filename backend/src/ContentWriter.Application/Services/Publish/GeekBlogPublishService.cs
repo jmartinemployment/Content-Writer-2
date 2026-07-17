@@ -81,7 +81,8 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         var articleRow = project.GeneratedContents.FirstOrDefault(c => c.ContentType == GeneratedContentType.TechnicalArticle);
         if (contentSet.Article is not null
             && contentSet.Article.WordCount >= PillarBodyMinWords
-            && !string.IsNullOrWhiteSpace(contentSet.ArticleSlug))
+            && !string.IsNullOrWhiteSpace(contentSet.ArticleSlug)
+            && IsApproved(articleRow))
         {
             published.Add(await PublishOneAsync(
                 target: target,
@@ -108,7 +109,8 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         var blogRow = project.GeneratedContents.FirstOrDefault(c => c.ContentType == GeneratedContentType.BlogPost);
         if (contentSet.Blog is not null
             && contentSet.Blog.WordCount > 0
-            && !string.IsNullOrWhiteSpace(contentSet.BlogSlug))
+            && !string.IsNullOrWhiteSpace(contentSet.BlogSlug)
+            && IsApproved(blogRow))
         {
             published.Add(await PublishOneAsync(
                 target: target,
@@ -135,7 +137,8 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         var toolRows = project.GeneratedContents
             .Where(c => c.ContentType == GeneratedContentType.ToolPost
                 && c.WordCount > 0
-                && !string.IsNullOrWhiteSpace(c.Slug))
+                && !string.IsNullOrWhiteSpace(c.Slug)
+                && IsApproved(c))
             .OrderBy(c => c.SourceAppOrder ?? int.MaxValue)
             .ToList();
 
@@ -166,11 +169,16 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         if (published.Count == 0)
         {
             throw new ContentGenerationException(
-                "Nothing to publish. Generate the pillar body and/or blog content first.");
+                "Nothing to publish. Generate content and run the review loop (POST .../review) first — " +
+                "only rows with an Approved ReviewVerdict are eligible.");
         }
 
         return new GeekBlogPublishResult(categorySlug, published);
     }
+
+    /// <summary>Publish gate: a row publishes only if its most recent ReviewVerdict is Approved. No verdict at all (review never run) also blocks publish.</summary>
+    private static bool IsApproved(GeneratedContent? row) =>
+        row?.ReviewVerdicts.OrderByDescending(v => v.CreatedAtUtc).FirstOrDefault()?.Status == ReviewVerdictStatus.Approved;
 
     private async Task<GeekBlogPublishedPost> PublishOneAsync(
         PublishTargetContext target,

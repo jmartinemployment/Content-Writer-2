@@ -25,6 +25,7 @@ public class ContentWriterDbContext : DbContext
     public DbSet<GeneratedContent> GeneratedContents => Set<GeneratedContent>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<PublishTarget> PublishTargets => Set<PublishTarget>();
+    public DbSet<ReviewVerdict> ReviewVerdicts => Set<ReviewVerdict>();
 
     private static string JoinList(List<string> values) => string.Join(ListSeparator[0], values);
 
@@ -117,6 +118,18 @@ public class ContentWriterDbContext : DbContext
                   .HasConversion(v => JoinList(v), v => SplitList(v), StringListComparer);
             entity.Property(g => g.SectionOutline)
                   .HasConversion(v => JoinList(v), v => SplitList(v), StringListComparer);
+
+            entity.HasMany(g => g.ReviewVerdicts)
+                  .WithOne(v => v.GeneratedContent)
+                  .HasForeignKey(v => v.GeneratedContentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReviewVerdict>(entity =>
+        {
+            entity.HasKey(v => v.Id);
+            entity.Property(v => v.ReviewerModel).HasMaxLength(256);
+            entity.Property(v => v.NotesJson);
         });
     }
 }
