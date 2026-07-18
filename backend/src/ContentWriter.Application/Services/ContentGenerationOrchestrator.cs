@@ -361,7 +361,13 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
         var blogUrl = CombineUrl(context.BlogBaseUrl, blogRow.Slug);
 
-        var sections = ArticleHtmlSectionExtractor.BuildSectionTargets(articleRow.BodyHtml, blogRow.BodyHtml);
+        var toolTitles = project.GeneratedContents
+            .Where(c => c.ContentType == GeneratedContentType.ToolPost)
+            .OrderBy(c => c.SourceAppOrder ?? int.MaxValue)
+            .Select(c => string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.Title : c.DisplayTitle!)
+            .ToList();
+
+        var sections = ArticleHtmlSectionExtractor.BuildSectionTargets(articleRow.BodyHtml, blogRow.BodyHtml, toolTitles);
         if (sections.Count == 0)
         {
             throw new ContentGenerationException(

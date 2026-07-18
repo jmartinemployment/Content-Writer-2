@@ -611,6 +611,7 @@ function ToolPostCard({ tool }: { tool: ToolPostDraft }) {
 function ImagePromptsView({ prompts }: { prompts: ImagePromptsSet }) {
   const pillarSections = prompts.sections.filter((s) => s.sourceType === "pillar");
   const blogSections = prompts.sections.filter((s) => s.sourceType === "blog");
+  const toolSections = prompts.sections.filter((s) => s.sourceType === "tool");
 
   return (
     <div className="space-y-8">
@@ -624,13 +625,16 @@ function ImagePromptsView({ prompts }: { prompts: ImagePromptsSet }) {
         >
           Leonardo.ai
         </a>
-        . One image per H2 section — prompts only, no images generated here.
+        . One image per H2 section (pillar/blog) or one per tool page — prompts only, no images generated here.
       </p>
       {pillarSections.length > 0 && (
         <ImagePromptSectionGroup title="Pillar sections" sections={pillarSections} />
       )}
       {blogSections.length > 0 && (
         <ImagePromptSectionGroup title="Blog sections" sections={blogSections} />
+      )}
+      {toolSections.length > 0 && (
+        <ImagePromptSectionGroup title="Tool pages" sections={toolSections} />
       )}
     </div>
   );

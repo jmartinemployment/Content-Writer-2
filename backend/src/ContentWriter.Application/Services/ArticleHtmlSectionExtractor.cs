@@ -84,7 +84,8 @@ public static class ArticleHtmlSectionExtractor
 
     public static IReadOnlyList<ImagePromptSectionTarget> BuildSectionTargets(
         string? pillarBodyHtml,
-        string? blogBodyHtml)
+        string? blogBodyHtml,
+        IReadOnlyList<string>? toolTitles = null)
     {
         var targets = new List<ImagePromptSectionTarget>();
         var order = 1;
@@ -98,6 +99,13 @@ public static class ArticleHtmlSectionExtractor
         foreach (var heading in ExtractH2Headings(blogBodyHtml))
         {
             targets.Add(new ImagePromptSectionTarget("blog", heading, order++));
+        }
+
+        // One prompt per tool page (not per-H2 within it) — a single hero/overview image per tool.
+        order = 1;
+        foreach (var title in toolTitles ?? [])
+        {
+            targets.Add(new ImagePromptSectionTarget("tool", title, order++));
         }
 
         return targets;

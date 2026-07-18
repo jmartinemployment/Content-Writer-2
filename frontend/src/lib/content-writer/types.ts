@@ -149,7 +149,7 @@ export interface SocialPostDraft {
 }
 
 export interface ImagePromptSection {
-  sourceType: "pillar" | "blog";
+  sourceType: "pillar" | "blog" | "tool";
   heading: string;
   order: number;
   prompt: string;
