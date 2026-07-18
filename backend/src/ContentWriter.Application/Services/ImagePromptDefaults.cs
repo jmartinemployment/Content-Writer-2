@@ -13,6 +13,6 @@ public static class ImagePromptDefaults
     public const int SocialHeight = 630;
     public const string SocialStylePreset = "Dynamic";
 
-    public const int PromptMinWords = 40;
+    public const int PromptMinWords = 20;
     public const int PromptMaxWords = 400;
 }
