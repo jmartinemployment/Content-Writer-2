@@ -386,7 +386,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             GeneratedContentType.ImagePromptSocialLinkedIn,
             GeneratedContentType.ImagePromptSection);
 
-        const int maxAttempts = 2;
+        const int maxAttempts = 3;
         ImagePromptSectionPromptsDraft? draft = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
