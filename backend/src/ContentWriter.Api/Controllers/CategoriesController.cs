@@ -1,54 +1,26 @@
-using ContentWriter.Application.Providers;
-using ContentWriter.Application.Services.Publish;
-using ContentWriter.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ContentWriter.Api.Controllers;
+
+public sealed record CategoryResponse(int Id, string Slug);
 
 [ApiController]
 [Route("api/categories")]
 public class CategoriesController : ControllerBase
 {
-    private readonly IGeekBackendClient _geekBackendClient;
-    private readonly ContentWriterDbContext _db;
-    private readonly ILogger<CategoriesController> _logger;
-
-    public CategoriesController(IGeekBackendClient geekBackendClient, ContentWriterDbContext db, ILogger<CategoriesController> logger)
-    {
-        _geekBackendClient = geekBackendClient;
-        _db = db;
-        _logger = logger;
-    }
+    // Temporary static list — GeekBackend's live categories endpoint requires GeekOAuth
+    // (which authenticates users, not this service-to-service call), so that fetch is
+    // disabled for now. Replace with a live call once GeekBackend publish is reinstated.
+    private static readonly IReadOnlyList<CategoryResponse> StaticCategories =
+    [
+        new(1, "Accounting"),
+        new(2, "Customer Service"),
+        new(3, "Human Resource"),
+        new(4, "Marketing"),
+        new(5, "Sales"),
+    ];
 
     [HttpGet]
-    public async Task<IActionResult> GetCategories(
-        [FromQuery] Guid clientId, [FromQuery] string lang, CancellationToken cancellationToken)
-    {
-        var client = await _db.Clients
-            .Include(c => c.PublishTarget)
-            .FirstOrDefaultAsync(c => c.Id == clientId, cancellationToken);
-
-        if (client is null)
-        {
-            return NotFound($"Client {clientId} was not found.");
-        }
-
-        try
-        {
-            var target = PublishTargetResolver.Resolve(client, requireAuthorId: false);
-            var categories = await _geekBackendClient.GetCategoriesAsync(
-                target, string.IsNullOrWhiteSpace(lang) ? "en" : lang, cancellationToken);
-            return Ok(categories);
-        }
-        catch (ContentGenerationException ex)
-        {
-            return Problem(ex.Message, statusCode: 400, title: "Client publish target not configured");
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Failed to fetch categories from GeekBackend");
-            return Problem(ex.Message, statusCode: 502, title: "GeekBackend categories fetch failed");
-        }
-    }
+    public IActionResult GetCategories([FromQuery] Guid clientId, [FromQuery] string lang) =>
+        Ok(StaticCategories);
 }
