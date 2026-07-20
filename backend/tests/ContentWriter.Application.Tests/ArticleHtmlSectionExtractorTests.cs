@@ -37,28 +37,55 @@ public class ArticleHtmlSectionExtractorTests
     }
 
     [Fact]
-    public void Split_splits_on_h2_boundaries_with_leading_content_as_section_zero()
+    public void SplitTree_nests_h3_through_h6_under_their_parent_heading()
     {
         var markdown = """
-            Intro paragraph.
+            Lead paragraph.
 
-            ## Section One
+            ## Understanding Predictive Cash Flow Forecasting
 
-            Body one.
+            ### The Evolution from Traditional to Predictive Forecasting
 
-            ## Section Two
+            Evolution body.
 
-            Body two.
+            #### A Deeper Point
+
+            Deeper body.
+
+            ### Core Components
+
+            Core body.
+
+            ## Benefits
             """;
 
-        var sections = ArticleHtmlSectionExtractor.Split(markdown);
+        var tree = ArticleHtmlSectionExtractor.SplitTree(markdown);
 
-        Assert.Equal(3, sections.Count);
-        Assert.Null(sections[0].HeadingText);
-        Assert.Equal("Intro paragraph.", sections[0].BodyContent);
-        Assert.Equal("Section One", sections[1].HeadingText);
-        Assert.Equal("Body one.", sections[1].BodyContent);
-        Assert.Equal("Section Two", sections[2].HeadingText);
-        Assert.Equal("Body two.", sections[2].BodyContent);
+        Assert.Equal(3, tree.Count);
+        Assert.Null(tree[0].Heading);
+        Assert.Equal("Lead paragraph.", tree[0].Body);
+
+        var h2 = tree[1];
+        Assert.Equal(2, h2.Level);
+        Assert.Equal("Understanding Predictive Cash Flow Forecasting", h2.Heading);
+        Assert.Equal(string.Empty, h2.Body);
+        Assert.Equal(2, h2.Children.Count);
+
+        var h3a = h2.Children[0];
+        Assert.Equal(3, h3a.Level);
+        Assert.Equal("The Evolution from Traditional to Predictive Forecasting", h3a.Heading);
+        Assert.Equal("Evolution body.", h3a.Body);
+        Assert.Single(h3a.Children);
+        Assert.Equal(4, h3a.Children[0].Level);
+        Assert.Equal("A Deeper Point", h3a.Children[0].Heading);
+        Assert.Equal("Deeper body.", h3a.Children[0].Body);
+
+        var h3b = h2.Children[1];
+        Assert.Equal("Core Components", h3b.Heading);
+        Assert.Equal("Core body.", h3b.Body);
+        Assert.Empty(h3b.Children);
+
+        Assert.Equal("Benefits", tree[2].Heading);
+        Assert.Empty(tree[2].Children);
     }
 }

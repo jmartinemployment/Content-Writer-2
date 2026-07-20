@@ -57,7 +57,7 @@ public class MdxExportService : IMdxExportService
         var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
         var title = string.IsNullOrWhiteSpace(row.DisplayTitle) ? row.Title : row.DisplayTitle!;
         var body = (row.BodyHtml ?? string.Empty).Trim();
-        var sections = ArticleHtmlSectionExtractor.Split(row.BodyHtml);
+        var sections = ArticleHtmlSectionExtractor.SplitTree(row.BodyHtml);
 
         var frontmatter = new StringBuilder()
             .AppendLine("---")
@@ -93,30 +93,41 @@ public class MdxExportService : IMdxExportService
     };
 
     /// <summary>
-    /// Emits H2-bound sections (heading + Markdown body per section) as a YAML array, so a layout
-    /// that composes fragments from specific entries — e.g. "blog[1].sections[0].heading" — can address
-    /// a single section without parsing the full MDX body. Mirrors the split GeekBackend publish uses.
+    /// Emits the nested H2-H6 heading tree as a YAML array, so a layout that composes fragments
+    /// from specific entries — e.g. "blog[1].sections[0].children[0].heading" — can address a single
+    /// heading and its own body directly, without a subheading's content bleeding into its parent's body.
     /// </summary>
-    private void AppendSectionsYaml(StringBuilder frontmatter, IReadOnlyList<HtmlSection> sections)
+    private static void AppendSectionsYaml(StringBuilder frontmatter, IReadOnlyList<MarkdownSection> sections)
+    {
+        frontmatter.Append("sections:");
+        AppendSectionsYamlAt(frontmatter, sections, indent: 2);
+    }
+
+    private static void AppendSectionsYamlAt(StringBuilder frontmatter, IReadOnlyList<MarkdownSection> sections, int indent)
     {
         if (sections.Count == 0)
         {
-            frontmatter.AppendLine("sections: []");
+            frontmatter.AppendLine(" []");
             return;
         }
 
-        frontmatter.AppendLine("sections:");
+        frontmatter.AppendLine();
+        var pad = new string(' ', indent);
         foreach (var section in sections)
         {
-            var heading = section.HeadingText ?? string.Empty;
-            var sectionBody = section.BodyContent.Trim();
+            var heading = section.Heading ?? string.Empty;
+            var sectionBody = section.Body.Trim();
 
-            frontmatter.Append("  - heading: ").AppendLine(YamlString(heading));
-            frontmatter.AppendLine("    body: |");
+            frontmatter.Append(pad).Append("- level: ").AppendLine(section.Level.ToString());
+            frontmatter.Append(pad).Append("  heading: ").AppendLine(YamlString(heading));
+            frontmatter.Append(pad).AppendLine("  body: |");
             foreach (var line in sectionBody.Split('\n'))
             {
-                frontmatter.Append("      ").AppendLine(line.TrimEnd('\r'));
+                frontmatter.Append(pad).Append("    ").AppendLine(line.TrimEnd('\r'));
             }
+
+            frontmatter.Append(pad).Append("  children:");
+            AppendSectionsYamlAt(frontmatter, section.Children, indent + 4);
         }
     }
 

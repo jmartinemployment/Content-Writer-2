@@ -78,10 +78,7 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IToolPageGenerator, ToolPageGenerator>();
         services.AddScoped<IContentGenerationOrchestrator, ContentGenerationOrchestrator>();
         services.AddHttpClient("GeekBackend");
-        services.AddSingleton<IGeekOAuthTokenProvider, GeekOAuthTokenProvider>();
-        services.AddScoped<IGeekBackendClient, GeekBackendClient>();
         services.AddScoped<IGeekRepository, GeekRepository>();
-        services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddScoped<IMdxExportService, MdxExportService>();
         services.AddHttpClient("GitHub");
         services.AddScoped<IGeekatyourspotCommitService, GeekatyourspotCommitService>();

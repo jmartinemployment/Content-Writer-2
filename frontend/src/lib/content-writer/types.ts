@@ -184,20 +184,6 @@ export interface ToolPostDraft {
   sourceAppOrder: number | null;
 }
 
-export interface PublishedPost {
-  contentType: string;
-  postId: number;
-  slug: string;
-  languageCode: string;
-  sectionCount: number;
-  wasUpdated: boolean;
-}
-
-export interface PublishResult {
-  categorySlug: string;
-  posts: PublishedPost[];
-}
-
 export interface CommitMdxExportResult {
   commitSha: string;
   commitUrl: string;

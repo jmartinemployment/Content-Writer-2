@@ -10,7 +10,6 @@ import type {
   LmStudioHealthStatus,
   ProjectDetail,
   ProjectSummary,
-  PublishResult,
   ReviewVerdict,
 } from "./types";
 
@@ -191,13 +190,6 @@ export async function getGeekBackendCategories(clientId: string, lang = "en"): P
     throw new ApiError(`Could not load categories from GeekBackend (${response.status}).`, response.status);
   }
   return (await response.json()) as CategoryOption[];
-}
-
-export function publishToGeekBlog(projectId: string, department?: string): Promise<PublishResult> {
-  return request<PublishResult>(`/api/projects/${projectId}/publish`, {
-    method: "POST",
-    body: JSON.stringify(department ? { department } : {}),
-  });
 }
 
 export async function downloadMdxExport(projectId: string): Promise<void> {

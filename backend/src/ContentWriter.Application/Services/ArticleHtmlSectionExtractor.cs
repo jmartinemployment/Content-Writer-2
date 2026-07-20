@@ -3,58 +3,95 @@ using Markdig.Syntax;
 
 namespace ContentWriter.Application.Services;
 
-/// <summary>One flat section split from a Markdown body, matching a geek_blog.post_sections row.</summary>
-public sealed record HtmlSection(
-    int SortOrder,
-    string? HeadingTag,
-    string? HeadingText,
-    string BodyContent,
-    string? MediaUrl = null,
-    string? MediaAlt = null);
+/// <summary>
+/// One node in the nested H2-H6 heading tree for a Markdown body — each heading individually
+/// addressable (e.g. sections[1].children[0].heading) rather than bundled into one blob per H2.
+/// Level 0 with a null heading holds any content before the first H2.
+/// </summary>
+public sealed record MarkdownSection(
+    int Level,
+    string? Heading,
+    string Body,
+    IReadOnlyList<MarkdownSection> Children);
 
 public static class ArticleHtmlSectionExtractor
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
 
     /// <summary>
-    /// Splits a Markdown body into ordered <see cref="HtmlSection"/> rows on H2 ("## ") boundaries,
-    /// using Markdig's AST rather than regex so code fences/blockquotes containing "##" aren't
-    /// mistaken for headings. Any content before the first H2 becomes sort_order 0 with a null heading.
+    /// Splits a Markdown body into a nested heading tree (H2 at the root, H3-H6 nested under their
+    /// parent heading) using Markdig's AST. A heading's Body is only the text directly under it,
+    /// before its first child heading — subheadings live in Children, not concatenated into Body.
     /// </summary>
-    public static IReadOnlyList<HtmlSection> Split(string? markdown)
+    public static IReadOnlyList<MarkdownSection> SplitTree(string? markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
             return [];
 
-        var h2s = TopLevelHeadings(markdown, level: 2);
-        if (h2s.Count == 0)
+        var headings = AllHeadings(markdown, minLevel: 2, maxLevel: 6);
+        if (headings.Count == 0)
         {
             var whole = markdown.Trim();
-            return whole.Length == 0 ? [] : [new HtmlSection(0, null, null, whole)];
+            return whole.Length == 0 ? [] : [new MarkdownSection(0, null, whole, [])];
         }
 
-        var sections = new List<HtmlSection>();
-        var sortOrder = 0;
-
-        if (h2s[0].Span.Start > 0)
+        var result = new List<MarkdownSection>();
+        if (headings[0].Span.Start > 0)
         {
-            var lead = markdown[..h2s[0].Span.Start].Trim();
+            var lead = markdown[..headings[0].Span.Start].Trim();
             if (lead.Length > 0)
             {
-                sections.Add(new HtmlSection(sortOrder++, null, null, lead));
+                result.Add(new MarkdownSection(0, null, lead, []));
             }
         }
 
-        for (var i = 0; i < h2s.Count; i++)
+        var index = 0;
+        result.AddRange(BuildLevel(markdown, headings, ref index, minLevel: 2));
+        return result;
+    }
+
+    private static List<MarkdownSection> BuildLevel(
+        string markdown,
+        IReadOnlyList<(string Text, int Level, SourceSpan Span)> headings,
+        ref int index,
+        int minLevel)
+    {
+        var nodes = new List<MarkdownSection>();
+
+        while (index < headings.Count && headings[index].Level >= minLevel)
         {
-            var bodyStart = h2s[i].Span.End + 1;
-            var bodyEnd = i + 1 < h2s.Count ? h2s[i + 1].Span.Start : markdown.Length;
+            var current = headings[index];
+            index++;
+
+            var bodyStart = current.Span.End + 1;
+            var bodyEnd = index < headings.Count ? headings[index].Span.Start : markdown.Length;
             var body = bodyStart < bodyEnd ? markdown[bodyStart..bodyEnd].Trim() : string.Empty;
 
-            sections.Add(new HtmlSection(sortOrder++, "h2", h2s[i].Text, body));
+            var children = index < headings.Count && headings[index].Level > current.Level
+                ? BuildLevel(markdown, headings, ref index, current.Level + 1)
+                : [];
+
+            nodes.Add(new MarkdownSection(current.Level, current.Text, body, children));
         }
 
-        return sections;
+        return nodes;
+    }
+
+    private static IReadOnlyList<(string Text, int Level, SourceSpan Span)> AllHeadings(
+        string markdown, int minLevel, int maxLevel)
+    {
+        var document = Markdig.Markdown.Parse(markdown, Pipeline);
+        var result = new List<(string, int, SourceSpan)>();
+
+        foreach (var block in document)
+        {
+            if (block is HeadingBlock heading && heading.Level >= minLevel && heading.Level <= maxLevel)
+            {
+                result.Add((HeadingText(markdown, heading), heading.Level, heading.Span));
+            }
+        }
+
+        return result;
     }
 
     public static IReadOnlyList<string> ExtractH2Headings(string? bodyMarkdown)
