@@ -8,6 +8,7 @@ public static class GeneratedContentSetAssembler
 {
     public static GeneratedContentSet Assemble(
         Project project,
+        string department,
         string articleBaseUrl,
         string blogBaseUrl,
         string toolBaseUrl)
@@ -19,9 +20,9 @@ public static class GeneratedContentSetAssembler
         var coldOutreachRow = Find(project, GeneratedContentType.EmailColdOutreach);
 
         var articleSlug = articleRow?.Slug;
-        var articleUrl = articleSlug is null ? null : CombineUrl(articleBaseUrl, articleSlug);
+        var articleUrl = articleSlug is null ? null : CombineUrl(articleBaseUrl, department, articleSlug);
         var blogSlug = blogRow?.Slug;
-        var blogUrl = blogSlug is null ? null : CombineUrl(blogBaseUrl, blogSlug);
+        var blogUrl = blogSlug is null ? null : CombineUrl(blogBaseUrl, department, blogSlug);
 
         return new GeneratedContentSet(
             Article: articleRow is null ? null : ToArticleDraft(articleRow),
@@ -42,10 +43,10 @@ public static class GeneratedContentSetAssembler
                     coldOutreachRow.MetaDescription ?? string.Empty,
                     coldOutreachRow.RelatedArticleUrl ?? articleUrl ?? string.Empty),
             ImagePrompts: BuildImagePrompts(project),
-            ToolPosts: BuildToolPosts(project, toolBaseUrl));
+            ToolPosts: BuildToolPosts(project, department, toolBaseUrl));
     }
 
-    private static IReadOnlyList<ToolPostContent>? BuildToolPosts(Project project, string toolBaseUrl)
+    private static IReadOnlyList<ToolPostContent>? BuildToolPosts(Project project, string department, string toolBaseUrl)
     {
         var toolRows = project.GeneratedContents
             .Where(c => c.ContentType == GeneratedContentType.ToolPost)
@@ -53,7 +54,7 @@ public static class GeneratedContentSetAssembler
             .Select(c => new ToolPostContent(
                 c.Title,
                 c.Slug,
-                CombineUrl(toolBaseUrl, c.Slug),
+                CombineUrl(toolBaseUrl, department, c.Slug),
                 c.BodyHtml,
                 c.MetaDescription ?? string.Empty,
                 c.JsonLdSchema,
@@ -94,5 +95,6 @@ public static class GeneratedContentSetAssembler
     private static GeneratedContent? Find(Project project, GeneratedContentType type) =>
         project.GeneratedContents.FirstOrDefault(c => c.ContentType == type);
 
-    private static string CombineUrl(string baseUrl, string slug) => $"{baseUrl.TrimEnd('/')}/{slug}";
+    private static string CombineUrl(string baseUrl, string department, string slug) =>
+        $"{baseUrl.TrimEnd('/')}/{department}/{slug}";
 }

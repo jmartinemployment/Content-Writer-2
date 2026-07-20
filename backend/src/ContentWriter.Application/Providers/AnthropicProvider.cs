@@ -28,9 +28,14 @@ public class AnthropicProvider : IContentGenerationProvider
 
     public async Task<ChatCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        var apiKey = string.IsNullOrWhiteSpace(_options.ApiKey)
+            ? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+            : _options.ApiKey;
+
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new ContentGenerationException("Anthropic API key is not configured (LlmProviders:Anthropic:ApiKey).");
+            throw new ContentGenerationException(
+                "Anthropic API key is not configured. Set ANTHROPIC_API_KEY (or LlmProviders__Anthropic__ApiKey).");
         }
 
         // Anthropic's Messages API takes system prompts as a top-level field, not a message with role "system".
@@ -56,7 +61,7 @@ public class AnthropicProvider : IContentGenerationProvider
         {
             Content = JsonContent.Create(payload, options: JsonOptions)
         };
-        httpRequest.Headers.Add("x-api-key", _options.ApiKey);
+        httpRequest.Headers.Add("x-api-key", apiKey);
         httpRequest.Headers.Add("anthropic-version", _options.AnthropicVersion);
 
         HttpResponseMessage response;

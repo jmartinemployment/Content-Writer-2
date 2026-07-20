@@ -4,7 +4,8 @@ public enum LlmProviderType
 {
     LmStudio = 0,
     OpenAi = 1,
-    Anthropic = 2
+    Anthropic = 2,
+    Groq = 3
 }
 
 public enum ProjectStatus
@@ -60,6 +61,6 @@ public enum ReviewVerdictStatus
     Approved = 0,
     Revise = 1,
 
-    /// <summary>Hit the 3-attempt cap without reaching Approved — needs an operator, not another auto-retry.</summary>
+    /// <summary>Hit the attempt cap without reaching Approved — needs an operator, not another auto-retry.</summary>
     Exhausted = 2
 }

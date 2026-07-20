@@ -7,6 +7,7 @@ public record ProjectGenerationContext(
     string ProjectName,
     string ProjectUrl,
     string TargetKeyword,
+    string Department,
     string SiteName,
     string DetectedTone,
     string DetectedFocus,

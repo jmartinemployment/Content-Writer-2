@@ -97,6 +97,7 @@ export function createProject(input: {
   name: string;
   projectUrl: string;
   targetKeyword: string;
+  department: string;
   preferredProvider: LlmProviderType;
 }): Promise<ProjectSummary> {
   return request<ProjectSummary>("/api/projects", {

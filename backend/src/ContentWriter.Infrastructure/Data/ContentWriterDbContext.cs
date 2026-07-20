@@ -63,6 +63,7 @@ public class ContentWriterDbContext : DbContext
             entity.Property(p => p.Name).HasMaxLength(256).IsRequired();
             entity.Property(p => p.ProjectUrl).HasMaxLength(2048).IsRequired();
             entity.Property(p => p.TargetKeyword).HasMaxLength(256);
+            entity.Property(p => p.Department).HasMaxLength(64).IsRequired();
 
             entity.HasOne(p => p.Client)
                   .WithMany(c => c.Projects)

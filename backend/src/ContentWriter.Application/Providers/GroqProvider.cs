@@ -7,40 +7,46 @@ using Microsoft.Extensions.Options;
 
 namespace ContentWriter.Application.Providers;
 
-/// <summary>Talks to the OpenAI Chat Completions API (https://api.openai.com/v1/chat/completions).</summary>
-public class OpenAiProvider : IContentGenerationProvider
+/// <summary>Talks to Groq's OpenAI-compatible Chat Completions API (https://api.groq.com/openai/v1/chat/completions) — cheap/fast Llama inference.</summary>
+public class GroqProvider : IContentGenerationProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _httpClient;
-    private readonly OpenAiOptions _options;
-    private readonly ILogger<OpenAiProvider> _logger;
+    private readonly GroqOptions _options;
+    private readonly ILogger<GroqProvider> _logger;
 
-    public LlmProviderType ProviderType => LlmProviderType.OpenAi;
+    public LlmProviderType ProviderType => LlmProviderType.Groq;
 
-    public OpenAiProvider(HttpClient httpClient, IOptions<LlmProvidersOptions> options, ILogger<OpenAiProvider> logger)
+    public GroqProvider(HttpClient httpClient, IOptions<LlmProvidersOptions> options, ILogger<GroqProvider> logger)
     {
         _httpClient = httpClient;
-        _options = options.Value.OpenAi;
+        _options = options.Value.Groq;
         _httpClient.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
         _logger = logger;
     }
 
     public async Task<ChatCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
     {
-        var apiKey = string.IsNullOrWhiteSpace(_options.ApiKey)
-            ? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-            : _options.ApiKey;
+        var apiKey = _options.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = Environment.GetEnvironmentVariable("CONTENTWRITER__GROG__KEY");
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new ContentGenerationException(
-                "OpenAI API key is not configured. Set OPENAI_API_KEY (or LlmProviders__OpenAi__ApiKey).");
+                "Groq API key is not configured. Set GROQ_API_KEY (or LlmProviders__Groq__ApiKey).");
         }
+
+        var model = request.Model
+            ?? Environment.GetEnvironmentVariable("CONTENTWRITER__GROG__MODEL")
+            ?? _options.Model;
 
         var payload = new OpenAiCompatibleRequest
         {
-            Model = request.Model ?? _options.Model,
+            Model = model,
             Messages = request.Messages.Select(m => new OpenAiCompatibleMessage(m.RoleString, m.Content)).ToList(),
             Temperature = request.Temperature,
             MaxTokens = request.MaxOutputTokens
@@ -59,26 +65,26 @@ public class OpenAiProvider : IContentGenerationProvider
         }
         catch (HttpRequestException ex)
         {
-            throw new ContentGenerationException("Could not reach the OpenAI API.", ex);
+            throw new ContentGenerationException("Could not reach the Groq API.", ex);
         }
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("OpenAI returned {Status}: {Body}", response.StatusCode, body);
-            throw new ContentGenerationException($"OpenAI request failed ({(int)response.StatusCode}): {body}");
+            _logger.LogError("Groq returned {Status}: {Body}", response.StatusCode, body);
+            throw new ContentGenerationException($"Groq request failed ({(int)response.StatusCode}): {body}");
         }
 
         var parsed = JsonSerializer.Deserialize<OpenAiCompatibleResponse>(body, JsonOptions)
-            ?? throw new ContentGenerationException("OpenAI returned an empty/unparseable response.");
+            ?? throw new ContentGenerationException("Groq returned an empty/unparseable response.");
 
         var choice = parsed.Choices.FirstOrDefault()
-            ?? throw new ContentGenerationException("OpenAI response contained no choices.");
+            ?? throw new ContentGenerationException("Groq response contained no choices.");
 
         return new ChatCompletionResult(
             Content: choice.Message.Content,
-            ModelUsed: parsed.Model ?? _options.Model,
+            ModelUsed: parsed.Model ?? model,
             PromptTokens: parsed.Usage?.PromptTokens,
             CompletionTokens: parsed.Usage?.CompletionTokens);
     }

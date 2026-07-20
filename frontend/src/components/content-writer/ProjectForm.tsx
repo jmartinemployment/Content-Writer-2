@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { PROVIDER_OPTIONS, type LlmProviderType, type ProjectSummary } from "@/lib/content-writer/types";
-import { createProject, ApiError, defaultLlmProvider, isProductionContentWriterApi } from "@/lib/content-writer/api";
+import { useEffect, useState } from "react";
+import { PROVIDER_OPTIONS, type CategoryOption, type LlmProviderType, type ProjectSummary } from "@/lib/content-writer/types";
+import {
+  createProject,
+  getGeekBackendCategories,
+  ApiError,
+  defaultLlmProvider,
+  isProductionContentWriterApi,
+} from "@/lib/content-writer/api";
 
 export default function ProjectForm({
   clientId,
@@ -14,16 +20,33 @@ export default function ProjectForm({
   const [name, setName] = useState("");
   const [projectUrl, setProjectUrl] = useState("");
   const [targetKeyword, setTargetKeyword] = useState("");
+  const [department, setDepartment] = useState("");
+  const [categories, setCategories] = useState<CategoryOption[] | null>(null);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [preferredProvider, setPreferredProvider] = useState<LlmProviderType>(defaultLlmProvider);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getGeekBackendCategories(clientId)
+      .then((options) => {
+        if (!cancelled) setCategories(options);
+      })
+      .catch(() => {
+        if (!cancelled) setCategoriesError("Could not load departments.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      const project = await createProject({ clientId, name, projectUrl, targetKeyword, preferredProvider });
+      const project = await createProject({ clientId, name, projectUrl, targetKeyword, department, preferredProvider });
       onCreated(project);
       setName("");
       setProjectUrl("");
@@ -63,6 +86,28 @@ export default function ProjectForm({
             placeholder="ai chatbot implementation cost"
             className="rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
           />
+        </label>
+
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
+          Department
+          {categoriesError ? (
+            <span className="text-xs text-red-600">{categoriesError}</span>
+          ) : (
+            <select
+              required
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              disabled={categories === null}
+              className="rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            >
+              <option value="">{categories === null ? "Loading departments..." : "Select a department"}</option>
+              {categories?.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.name ?? c.slug}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground sm:col-span-2">

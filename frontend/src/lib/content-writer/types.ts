@@ -1,4 +1,4 @@
-export type LlmProviderType = "LmStudio" | "OpenAi" | "Anthropic";
+export type LlmProviderType = "LmStudio" | "OpenAi" | "Anthropic" | "Groq";
 
 export type ProjectStatus =
   | "Draft"
@@ -58,6 +58,7 @@ export interface ProjectSummary {
   name: string;
   projectUrl: string;
   targetKeyword: string;
+  department: string;
   status: ProjectStatus;
   preferredProvider: LlmProviderType;
   createdAtUtc: string;
@@ -244,4 +245,5 @@ export const PROVIDER_OPTIONS: { value: LlmProviderType; label: string }[] = [
   { value: "LmStudio", label: "LM Studio (local dev only)" },
   { value: "OpenAi", label: "OpenAI" },
   { value: "Anthropic", label: "Anthropic (Claude)" },
+  { value: "Groq", label: "Groq (Llama)" },
 ];

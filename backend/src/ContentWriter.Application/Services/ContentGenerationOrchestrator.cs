@@ -112,8 +112,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var bodyHtml = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, cancellationToken);
         var wordCount = HtmlWordCounter.Count(bodyHtml);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
-        var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, $"{articleRow.Slug}-blog");
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
+        var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
 
         var now = DateTime.UtcNow;
         var articleMetadata = new ContentMetadata(
@@ -154,7 +154,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var metadata = ToMetadataDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating tool pages for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
@@ -193,7 +193,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating blog content for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
@@ -201,7 +201,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var blog = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
         var blogSlug = SlugHelper.Slugify(blog.Title);
-        var blogUrl = CombineUrl(context.BlogBaseUrl, blogSlug);
+        var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
 
         var now = DateTime.UtcNow;
         var blogMetadata = new ContentMetadata(
@@ -254,7 +254,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating social content for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
@@ -299,7 +299,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating cold outreach email for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
@@ -358,8 +358,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var provider = _providerFactory.Get(project.PreferredProvider);
         var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
         var blog = GeneratedContentSetAssembler.ToBlogDraft(blogRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, articleRow.Slug);
-        var blogUrl = CombineUrl(context.BlogBaseUrl, blogRow.Slug);
+        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
+        var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogRow.Slug);
 
         var toolTitles = project.GeneratedContents
             .Where(c => c.ContentType == GeneratedContentType.ToolPost)
@@ -551,7 +551,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
     private GeneratedContentSet Assemble(Project project) =>
         GeneratedContentSetAssembler.Assemble(
-            project, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
+            project, project.Department, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
 
     private ProjectGenerationContext BuildContext(Project project)
     {
@@ -601,6 +601,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ProjectName: project.Name,
             ProjectUrl: project.ProjectUrl,
             TargetKeyword: project.TargetKeyword,
+            Department: project.Department,
             SiteName: crawl.SiteName,
             DetectedTone: crawl.DetectedTone,
             DetectedFocus: crawl.DetectedFocus,
@@ -619,7 +620,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             Provider: project.PreferredProvider);
     }
 
-    private static string CombineUrl(string baseUrl, string slug) => $"{baseUrl.TrimEnd('/')}/{slug}";
+    private static string CombineUrl(string baseUrl, string department, string slug) =>
+        $"{baseUrl.TrimEnd('/')}/{department}/{slug}";
 
     private static string ResolveModelName(LlmProviderType provider) => provider switch
     {
@@ -965,7 +967,7 @@ public class CompanyProfileOptions
     public string PublisherName { get; set; } = "Geek At Your Spot";
     public string PublisherLogoUrl { get; set; } = "https://seo.geekatyourspot.com/logo.png";
     public string AuthorName { get; set; } = "Geek At Your Spot Editorial Team";
-    public string ArticleBaseUrl { get; set; } = "https://seo.geekatyourspot.com/articles";
+    public string ArticleBaseUrl { get; set; } = "https://seo.geekatyourspot.com/use-cases";
     public string BlogBaseUrl { get; set; } = "https://seo.geekatyourspot.com/blog";
     public string ToolBaseUrl { get; set; } = "https://seo.geekatyourspot.com/tools";
 

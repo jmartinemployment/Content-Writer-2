@@ -69,7 +69,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         articleRow.BodyHtml = ToolsSectionHtmlParser.InjectToolLinks(
             articleRow.BodyHtml,
             metadata.SectionOutline,
-            context.ToolBaseUrl,
+            $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}",
             rows.Select(r => (r.SourceAppName!, r.Slug)).ToList());
 
         return new ToolGenerationResult(ToolGenerationOutcome.Success, rows);
@@ -86,7 +86,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         int order,
         CancellationToken cancellationToken)
     {
-        var toolUrl = $"{context.ToolBaseUrl.TrimEnd('/')}/{slug}";
+        var toolUrl = $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}/{slug}";
 
         var bodyHtml = await GenerateToolBodyWithValidationAsync(
             provider, context, metadata, app, slug, cancellationToken);

@@ -40,12 +40,15 @@ public class MdxExportService : IMdxExportService
         foreach (var row in project.GeneratedContents
             .Where(c => c.ContentType is GeneratedContentType.TechnicalArticle
                 or GeneratedContentType.BlogPost
-                or GeneratedContentType.ToolPost)
+                or GeneratedContentType.ToolPost
+                or GeneratedContentType.SocialFacebook
+                or GeneratedContentType.SocialLinkedIn
+                or GeneratedContentType.EmailColdOutreach)
             .Where(IsApproved)
             .OrderBy(c => c.ContentType)
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
         {
-            documents.Add(ToMdxDocument(row));
+            documents.Add(ToMdxDocument(row, project.Department));
         }
 
         if (documents.Count == 0)
@@ -58,7 +61,7 @@ public class MdxExportService : IMdxExportService
         return documents;
     }
 
-    private MdxDocument ToMdxDocument(GeneratedContent row)
+    private MdxDocument ToMdxDocument(GeneratedContent row, string department)
     {
         var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
         var title = string.IsNullOrWhiteSpace(row.DisplayTitle) ? row.Title : row.DisplayTitle!;
@@ -70,6 +73,7 @@ public class MdxExportService : IMdxExportService
             .Append("title: ").AppendLine(YamlString(title))
             .Append("description: ").AppendLine(YamlString(row.MetaDescription ?? string.Empty))
             .Append("slug: ").AppendLine(YamlString(slug))
+            .Append("department: ").AppendLine(YamlString(department))
             .Append("date: ").AppendLine(YamlString(row.CreatedAtUtc.ToString("O")))
             .Append("excerpt: ").AppendLine(YamlString(row.Summary))
             .Append("mainSummary: ").AppendLine(YamlString(row.MainSummary))
@@ -81,8 +85,21 @@ public class MdxExportService : IMdxExportService
         AppendSectionsYaml(frontmatter, sections);
         frontmatter.AppendLine("---");
 
-        return new MdxDocument($"{slug}.mdx", $"{frontmatter}\n{body}\n");
+        var folder = FolderFor(row.ContentType);
+        return new MdxDocument($"{folder}/{slug}.mdx", $"{frontmatter}\n{body}\n");
     }
+
+    /// <summary>Maps a content type to its Keystatic collection folder under content-writer-output/.</summary>
+    private static string FolderFor(GeneratedContentType contentType) => contentType switch
+    {
+        GeneratedContentType.TechnicalArticle => "use-cases",
+        GeneratedContentType.BlogPost => "blog",
+        GeneratedContentType.ToolPost => "tools",
+        GeneratedContentType.SocialFacebook => "social/facebook",
+        GeneratedContentType.SocialLinkedIn => "social/linkedin",
+        GeneratedContentType.EmailColdOutreach => "email",
+        _ => "misc",
+    };
 
     /// <summary>
     /// Emits H2-bound sections (heading + Markdown body per section) as a YAML array, so a layout

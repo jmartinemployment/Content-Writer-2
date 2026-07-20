@@ -33,6 +33,11 @@ public class ProjectsController : ControllerBase
             return BadRequest("ProjectUrl must be a valid absolute URL.");
         }
 
+        if (!Departments.IsValid(request.Department))
+        {
+            return BadRequest($"Department must be one of: {string.Join(", ", Departments.Slugs)}.");
+        }
+
         var existing = (await _projectRepository.ListAsync(
             p => p.TargetKeyword == request.TargetKeyword && p.ProjectUrl == request.ProjectUrl,
             cancellationToken)).FirstOrDefault();
@@ -47,6 +52,7 @@ public class ProjectsController : ControllerBase
             Name = request.Name,
             ProjectUrl = request.ProjectUrl,
             TargetKeyword = request.TargetKeyword,
+            Department = request.Department,
             PreferredProvider = request.PreferredProvider
         };
 
@@ -91,14 +97,14 @@ public class ProjectsController : ControllerBase
         var contentSet = project.GeneratedContents.Count == 0
             ? null
             : GeneratedContentSetAssembler.Assemble(
-                project, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
+                project, project.Department, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
 
         return Ok(new ProjectDetailResponse(
-            project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Status,
+            project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department, project.Status,
             project.PreferredProvider, crawl, keywordSources, generatedContent, contentSet));
     }
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(
-        project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword,
+        project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department,
         project.Status, project.PreferredProvider, project.CreatedAtUtc);
 }

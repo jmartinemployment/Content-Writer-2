@@ -9,6 +9,9 @@ public class Project
     public string Name { get; set; } = string.Empty;
     public string ProjectUrl { get; set; } = string.Empty;
     public string TargetKeyword { get; set; } = string.Empty;
+
+    /// <summary>Department/category slug (e.g. "accounting") — determines the published URL segment: /use-cases/{Department}/{slug}.</summary>
+    public string Department { get; set; } = string.Empty;
     public ProjectStatus Status { get; set; } = ProjectStatus.Draft;
     public LlmProviderType PreferredProvider { get; set; } = LlmProviderType.LmStudio;
 

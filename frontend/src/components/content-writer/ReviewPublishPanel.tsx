@@ -93,8 +93,8 @@ export default function ReviewPublishPanel({
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-foreground">8. Editorial Review</h2>
       <p className="mt-1 text-sm text-muted">
-        Automated revise loop — a different model reviews each row (invented-feature/fact check, brand-voice
-        consistency), and on Revise regenerates and re-reviews, up to 3 attempts. Only Approved rows can publish.
+        A different model reviews each row (invented-feature/fact check, brand-voice consistency) —
+        single pass, no revise-and-retry. Only Approved rows can publish.
       </p>
 
       <button
@@ -110,7 +110,7 @@ export default function ReviewPublishPanel({
       {verdicts && (
         <div className="mt-5 space-y-2">
           <p className="text-xs text-muted">
-            {approvedCount} approved, {exhaustedCount} exhausted (hit the 3-attempt cap), {verdicts.length} rows reviewed.
+            {approvedCount} approved, {exhaustedCount} exhausted, {verdicts.length} rows reviewed.
           </p>
           {verdicts.map((v) => (
             <VerdictRow key={v.id} verdict={v} />

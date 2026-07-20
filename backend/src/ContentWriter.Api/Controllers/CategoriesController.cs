@@ -1,8 +1,9 @@
+using ContentWriter.Application.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContentWriter.Api.Controllers;
 
-public sealed record CategoryResponse(int Id, string Slug);
+public sealed record CategoryResponse(int Id, string Slug, string Name);
 
 [ApiController]
 [Route("api/categories")]
@@ -12,13 +13,7 @@ public class CategoriesController : ControllerBase
     // (which authenticates users, not this service-to-service call), so that fetch is
     // disabled for now. Replace with a live call once GeekBackend publish is reinstated.
     private static readonly IReadOnlyList<CategoryResponse> StaticCategories =
-    [
-        new(1, "Accounting"),
-        new(2, "Customer Service"),
-        new(3, "Human Resource"),
-        new(4, "Marketing"),
-        new(5, "Sales"),
-    ];
+        Departments.Slugs.Select((slug, i) => new CategoryResponse(i + 1, slug, Departments.DisplayName(slug))).ToList();
 
     [HttpGet]
     public IActionResult GetCategories([FromQuery] Guid clientId, [FromQuery] string lang) =>

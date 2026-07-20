@@ -82,9 +82,9 @@ public sealed class EditorialReviewService : IEditorialReviewService
         return new ReviewOutcome(status, result.Content, reviewer.ProviderType, result.ModelUsed);
     }
 
-    /// <summary>Always a different model than the writer — Anthropic reviews OpenAI/LmStudio output, OpenAI reviews Anthropic.</summary>
+    /// <summary>Always a different, cheaper model than the writer — Groq (Llama) reviews everything except its own output, which OpenAI reviews instead.</summary>
     private static LlmProviderType PickReviewerProvider(LlmProviderType writerProvider) =>
-        writerProvider == LlmProviderType.Anthropic ? LlmProviderType.OpenAi : LlmProviderType.Anthropic;
+        writerProvider == LlmProviderType.Groq ? LlmProviderType.OpenAi : LlmProviderType.Groq;
 
     private sealed record ReviewResponse(string? Verdict, string? Notes);
 }

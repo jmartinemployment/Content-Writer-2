@@ -67,13 +67,14 @@ public class GeekBlogPublishService : IGeekBlogPublishService
 
         var target = PublishTargetResolver.Resolve(client);
 
+        var categorySlug = DepartmentNameResolver.Resolve(departmentOverride ?? project.Department);
+
         var contentSet = GeneratedContentSetAssembler.Assemble(
             project,
+            categorySlug,
             _companyProfile.ArticleBaseUrl,
             _companyProfile.BlogBaseUrl,
             _companyProfile.ToolBaseUrl);
-
-        var categorySlug = DepartmentNameResolver.Resolve(departmentOverride);
 
         var publishedAt = DateTimeOffset.UtcNow;
         var published = new List<GeekBlogPublishedPost>();

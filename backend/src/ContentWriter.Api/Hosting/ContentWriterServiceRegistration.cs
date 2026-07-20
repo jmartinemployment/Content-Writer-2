@@ -50,6 +50,7 @@ public static class ContentWriterServiceRegistration
         services.AddHttpClient<LmStudioProvider>();
         services.AddHttpClient<OpenAiProvider>();
         services.AddHttpClient<AnthropicProvider>();
+        services.AddHttpClient<GroqProvider>();
 
         var maxConcurrentLlmCalls = configuration.GetValue<int?>("LlmProviders:MaxConcurrentCalls") ?? 4;
         services.AddSingleton(new LlmConcurrencyGate(maxConcurrentLlmCalls));
@@ -63,6 +64,9 @@ public static class ContentWriterServiceRegistration
         services.AddKeyedTransient<IContentGenerationProvider>(LlmProviderType.Anthropic,
             (sp, _) => new ConcurrencyLimitingContentGenerationProvider(
                 sp.GetRequiredService<AnthropicProvider>(), sp.GetRequiredService<LlmConcurrencyGate>()));
+        services.AddKeyedTransient<IContentGenerationProvider>(LlmProviderType.Groq,
+            (sp, _) => new ConcurrencyLimitingContentGenerationProvider(
+                sp.GetRequiredService<GroqProvider>(), sp.GetRequiredService<LlmConcurrencyGate>()));
 
         services.AddScoped<IContentProviderFactory, ContentProviderFactory>();
         services.AddHttpClient<ISiteCrawlerService, SiteCrawlerService>();

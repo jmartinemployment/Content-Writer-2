@@ -10,16 +10,17 @@ public interface IReviewLoopService
 {
     /// <summary>
     /// Runs the automated revise loop over a project's publishable rows (pillar, blog, the tool
-    /// post set) — review, and on Revise regenerate + re-review, up to 3 attempts. No human gate,
-    /// no held-for-manual-review state. A row that hits the cap without Approved becomes
-    /// Exhausted — visible via the live AttemptCount, not silently retried forever.
+    /// post set) — review, and on Revise regenerate + re-review, up to <see cref="MaxAttempts"/>
+    /// attempts. No human gate, no held-for-manual-review state. A row that hits the cap without
+    /// Approved becomes Exhausted — visible via the live AttemptCount, not silently retried forever.
     /// </summary>
     Task<List<ReviewVerdict>> RunForProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewLoopService : IReviewLoopService
 {
-    private const int MaxAttempts = 3;
+    // Capped to 1 to limit review-call cost — no revise-and-retry loop, just a single review pass per row.
+    private const int MaxAttempts = 1;
 
     private readonly ContentWriterDbContext _db;
     private readonly IEditorialReviewService _reviewService;
@@ -92,7 +93,7 @@ public sealed class ReviewLoopService : IReviewLoopService
         return verdict;
     }
 
-    /// <summary>Tool posts regenerate as a whole set (GenerateToolPagesAsync has no single-row mode) — reviewed as a batch: any Revise triggers regenerating the entire set, up to 3 whole-set attempts.</summary>
+    /// <summary>Tool posts regenerate as a whole set (GenerateToolPagesAsync has no single-row mode) — reviewed as a batch: any Revise triggers regenerating the entire set, up to MaxAttempts whole-set attempts.</summary>
     private async Task<List<ReviewVerdict>> RunToolPostBatchLoopAsync(
         Guid projectId, string targetKeyword, CancellationToken cancellationToken)
     {
