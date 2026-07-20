@@ -98,7 +98,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         "{\"subject\": string, \"bodyText\": string (50-125 words), \"ctaLabel\": string}";
 
     private const string ImagePromptSectionItemJsonContract =
-        "{\"sourceType\": \"pillar|blog\", \"heading\": string (exact H2 text), \"order\": number, \"prompt\": string (40-400 words), \"width\": number, \"height\": number, \"leonardoModel\": string, \"stylePreset\": string, \"alchemy\": boolean, \"photoReal\": boolean, \"notes\": string|null}";
+        "{\"sourceType\": \"pillar|blog\", \"heading\": string (exact H2 text), \"order\": number, \"prompt\": string (40-400 words), \"width\": number, \"height\": number, \"imageModel\": string, \"stylePreset\": string, \"alchemy\": boolean, \"photoReal\": boolean, \"notes\": string|null}";
 
     private const string ImagePromptSectionsJsonContract =
         "{\"sections\": [" + ImagePromptSectionItemJsonContract + ", ...]}";
@@ -496,8 +496,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         IReadOnlyList<ImagePromptSectionTarget> sections)
     {
         var system = new StringBuilder()
-            .AppendLine("You write Leonardo.ai image prompts for inline B2B article figures.")
-            .AppendLine("Return ONE prompt per listed <h2> section — the user copies each into Leonardo manually.")
+            .AppendLine("You write AI image-generation prompts for inline B2B article figures.")
+            .AppendLine("Return ONE prompt per listed <h2> section — the user pastes each into their image generator manually.")
             .AppendLine()
             .AppendLine("VISUAL STYLE:")
             .AppendLine("- Flat vector / infographic, professional fintech or B2B tech aesthetic.")
@@ -508,11 +508,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("- People Also Ask: abstract Q&A bubbles/shapes without words.")
             .AppendLine("- Tools sections: generic software tiles/icons — no brand names.")
             .AppendLine()
-            .AppendLine("LEONARDO SETTINGS (include in JSON for each section):")
-            .AppendLine($"- leonardoModel: \"{ImagePromptDefaults.LeonardoPhoenixModel}\"")
+            .AppendLine("IMAGE SETTINGS (include in JSON for each section):")
+            .AppendLine($"- imageModel: \"{ImagePromptDefaults.DefaultImageModel}\"")
             .AppendLine("- stylePreset: Illustration")
             .AppendLine("- alchemy: true, photoReal: false")
-            .AppendLine("- notes: one short Leonardo tip (negative prompt, no text, etc.)")
+            .AppendLine("- notes: one short image-gen tip (negative prompt, no text, etc.)")
             .AppendLine()
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences:")
             .AppendLine(ImagePromptSectionsJsonContract)
@@ -527,7 +527,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Site tone: {context.DetectedTone}")
             .AppendLine()
-            .AppendLine("Sections requiring Leonardo prompts:");
+            .AppendLine("Sections requiring image prompts:");
 
         foreach (var section in sections)
         {

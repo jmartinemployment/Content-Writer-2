@@ -195,6 +195,32 @@ export function publishToGeekBlog(projectId: string, department?: string): Promi
   });
 }
 
+export async function downloadMdxExport(projectId: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/export/mdx`);
+  } catch {
+    throw new ApiError(
+      `Could not reach the API at ${API_BASE_URL}. Hard-refresh the page and confirm the API is running.`,
+      0
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    const problemDetail = tryParseProblemDetail(detail);
+    throw new ApiError(problemDetail || detail || response.statusText, response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${projectId}-mdx-export.zip`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function getLmStudioStatus(): Promise<LmStudioHealthStatus> {
   return request<LmStudioHealthStatus>("/api/llm/lm-studio/status");
 }

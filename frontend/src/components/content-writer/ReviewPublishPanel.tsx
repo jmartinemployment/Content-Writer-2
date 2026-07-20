@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getGeekBackendCategories, publishToGeekBlog, runReview, ApiError } from "@/lib/content-writer/api";
+import { downloadMdxExport, getGeekBackendCategories, publishToGeekBlog, runReview, ApiError } from "@/lib/content-writer/api";
 import type { CategoryOption, GeneratedContentSet, PublishResult, ReviewVerdict } from "@/lib/content-writer/types";
 
 export default function ReviewPublishPanel({
@@ -23,6 +23,9 @@ export default function ReviewPublishPanel({
   const [publishDepartment, setPublishDepartment] = useState("");
   const [categories, setCategories] = useState<CategoryOption[] | null>(null);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const hasPublishableContent = (result?.article?.wordCount ?? 0) > 0 || result?.blog != null;
 
@@ -64,6 +67,18 @@ export default function ReviewPublishPanel({
       setPublishError(err instanceof ApiError ? err.message : "Publish failed.");
     } finally {
       setIsPublishing(false);
+    }
+  }
+
+  async function handleExport() {
+    setExportError(null);
+    setIsExporting(true);
+    try {
+      await downloadMdxExport(projectId);
+    } catch (err) {
+      setExportError(err instanceof ApiError ? err.message : "Export failed.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -157,6 +172,25 @@ export default function ReviewPublishPanel({
             </ul>
           </div>
         )}
+      </div>
+
+      <div className="mt-6 border-t border-border pt-5">
+        <h3 className="text-sm font-semibold text-foreground">10. Export .mdx files</h3>
+        <p className="mt-1 text-xs text-muted">
+          Downloads a .zip of the approved article/blog/tool content as .mdx files (YAML frontmatter + Markdown
+          body) — same Approved-verdict gate as publish above.
+        </p>
+
+        <button
+          type="button"
+          disabled={isExporting}
+          onClick={handleExport}
+          className="mt-3 rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
+        >
+          {isExporting ? "Exporting..." : "Export .mdx files"}
+        </button>
+
+        {exportError && <p className="mt-3 text-sm text-red-600">{exportError}</p>}
       </div>
     </div>
   );

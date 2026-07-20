@@ -17,8 +17,8 @@ public static class ImagePromptMetadata
         JsonSerializer.Serialize(new StoredImagePromptSettings(
             item.Width,
             item.Height,
-            item.LeonardoModel,
-            ResolveModelId(item.LeonardoModel),
+            item.ImageModel,
+            ResolveModelId(item.ImageModel),
             item.StylePreset,
             item.Alchemy,
             item.PhotoReal,
@@ -37,8 +37,8 @@ public static class ImagePromptMetadata
             row.BodyHtml,
             settings.Width,
             settings.Height,
-            settings.LeonardoModel,
-            settings.LeonardoModelId,
+            settings.ImageModel,
+            settings.ImageModelId,
             settings.StylePreset,
             settings.Alchemy,
             settings.PhotoReal,
@@ -55,8 +55,8 @@ public static class ImagePromptMetadata
             return new StoredImagePromptSettings(
                 ImagePromptDefaults.PillarWidth,
                 ImagePromptDefaults.PillarHeight,
-                ImagePromptDefaults.LeonardoPhoenixModel,
-                ImagePromptDefaults.LeonardoPhoenixModelId,
+                ImagePromptDefaults.DefaultImageModel,
+                ImagePromptDefaults.DefaultImageModelId,
                 ImagePromptDefaults.PillarStylePreset,
                 Alchemy: true,
                 PhotoReal: false,
@@ -74,9 +74,9 @@ public static class ImagePromptMetadata
 
             return parsed with
             {
-                LeonardoModelId = string.IsNullOrWhiteSpace(parsed.LeonardoModelId)
-                    ? ResolveModelId(parsed.LeonardoModel)
-                    : parsed.LeonardoModelId,
+                ImageModelId = string.IsNullOrWhiteSpace(parsed.ImageModelId)
+                    ? ResolveModelId(parsed.ImageModel)
+                    : parsed.ImageModelId,
             };
         }
         catch (JsonException)
@@ -84,8 +84,8 @@ public static class ImagePromptMetadata
             return new StoredImagePromptSettings(
                 ImagePromptDefaults.PillarWidth,
                 ImagePromptDefaults.PillarHeight,
-                ImagePromptDefaults.LeonardoPhoenixModel,
-                ImagePromptDefaults.LeonardoPhoenixModelId,
+                ImagePromptDefaults.DefaultImageModel,
+                ImagePromptDefaults.DefaultImageModelId,
                 ImagePromptDefaults.PillarStylePreset,
                 Alchemy: true,
                 PhotoReal: false,
@@ -96,16 +96,13 @@ public static class ImagePromptMetadata
         }
     }
 
-    private static string ResolveModelId(string modelName) =>
-        modelName.Contains("Phoenix", StringComparison.OrdinalIgnoreCase)
-            ? ImagePromptDefaults.LeonardoPhoenixModelId
-            : ImagePromptDefaults.LeonardoPhoenixModelId;
+    private static string ResolveModelId(string modelName) => ImagePromptDefaults.DefaultImageModelId;
 
     private sealed record StoredImagePromptSettings(
         int Width,
         int Height,
-        string LeonardoModel,
-        string LeonardoModelId,
+        string ImageModel,
+        string ImageModelId,
         string StylePreset,
         bool Alchemy,
         bool PhotoReal,

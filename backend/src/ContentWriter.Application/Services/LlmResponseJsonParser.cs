@@ -176,7 +176,7 @@ public static class LlmResponseJsonParser
             (item.Prompt ?? "").Trim(),
             item.Width,
             item.Height,
-            (item.LeonardoModel ?? "").Trim(),
+            (item.ImageModel ?? "").Trim(),
             (item.StylePreset ?? "").Trim(),
             item.Alchemy ?? true,
             item.PhotoReal ?? false,
@@ -241,9 +241,9 @@ public static class LlmResponseJsonParser
             throw new ContentGenerationException($"Prompt for \"{expected.Heading}\" should be landscape (width >= height).");
         }
 
-        if (string.IsNullOrWhiteSpace(item.LeonardoModel))
+        if (string.IsNullOrWhiteSpace(item.ImageModel))
         {
-            throw new ContentGenerationException($"Model returned empty leonardoModel for \"{expected.Heading}\" in {label}.");
+            throw new ContentGenerationException($"Model returned empty imageModel for \"{expected.Heading}\" in {label}.");
         }
 
         if (string.IsNullOrWhiteSpace(item.StylePreset))
@@ -429,7 +429,7 @@ public static class LlmResponseJsonParser
         string? Prompt,
         int Width,
         int Height,
-        string? LeonardoModel,
+        string? ImageModel,
         string? StylePreset,
         bool? Alchemy,
         bool? PhotoReal,

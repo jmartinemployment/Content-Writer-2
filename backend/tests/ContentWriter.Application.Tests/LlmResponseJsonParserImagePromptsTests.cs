@@ -28,7 +28,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{pillarPrompt}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false,
@@ -41,7 +41,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{blogPrompt}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false,
@@ -73,7 +73,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{BuildPrompt(10)}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false
@@ -85,7 +85,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{BuildPrompt(60)}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false
@@ -111,7 +111,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{BuildPrompt(80)}}",
                   "width": 1024,
                   "height": 1536,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false
@@ -123,7 +123,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{BuildPrompt(60)}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false
@@ -149,7 +149,7 @@ public class LlmResponseJsonParserImagePromptsTests
                   "prompt": "{{BuildPrompt(80)}}",
                   "width": 1536,
                   "height": 1024,
-                  "leonardoModel": "Leonardo Phoenix",
+                  "imageModel": "Default",
                   "stylePreset": "Illustration",
                   "alchemy": true,
                   "photoReal": false

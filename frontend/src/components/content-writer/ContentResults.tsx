@@ -79,7 +79,7 @@ export default function ContentResults({
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-foreground">4. Generate Content</h2>
       <p className="mt-1 text-sm text-muted">
-        Run each step separately. Steps 1–2 plan and write the pillar article; steps 3–7 build blog, social, email, tool documents, and Leonardo image prompts from it.
+        Run each step separately. Steps 1–2 plan and write the pillar article; steps 3–7 build blog, social, email, tool documents, and image prompts from it.
       </p>
 
       <div className="mt-5 space-y-3">
@@ -156,8 +156,8 @@ export default function ContentResults({
 
         <StepRow
           step={7}
-          title="Image prompts (Leonardo)"
-          description="One Leonardo.ai prompt per H2 in the pillar and blog — copy each into Leonardo for section figures."
+          title="Image prompts"
+          description="One image-generation prompt per H2 in the pillar and blog — copy each into your image generator for section figures."
           done={hasImagePrompts}
           disabled={!hasBlog || isGenerating}
           isRunning={generatingStep === "image-prompts"}
@@ -325,7 +325,7 @@ export default function ContentResults({
               (result.imagePrompts ? (
                 <ImagePromptsView prompts={result.imagePrompts} />
               ) : (
-                <EmptyTabHint message="Run Step 7 to generate Leonardo image prompts." />
+                <EmptyTabHint message="Run Step 7 to generate image prompts." />
               ))}
           </div>
         </div>
@@ -542,10 +542,10 @@ function ColdOutreachView({ email }: { email: ColdOutreachEmailDraft }) {
   );
 }
 
-function formatLeonardoSettings(item: ImagePromptSection): string {
+function formatImageSettings(item: ImagePromptSection): string {
   const lines = [
-    `Model: ${item.leonardoModel}`,
-    `Model ID: ${item.leonardoModelId}`,
+    `Model: ${item.imageModel}`,
+    `Model ID: ${item.imageModelId}`,
     `Dimensions: ${item.width} × ${item.height}`,
     `Style preset: ${item.stylePreset}`,
     `Alchemy: ${item.alchemy ? "On" : "Off"}`,
@@ -555,8 +555,8 @@ function formatLeonardoSettings(item: ImagePromptSection): string {
   return lines.join("\n");
 }
 
-function formatLeonardoCopyBlock(item: ImagePromptSection): string {
-  return `${formatLeonardoSettings(item)}\n\nPrompt:\n${item.prompt}`;
+function formatImageCopyBlock(item: ImagePromptSection): string {
+  return `${formatImageSettings(item)}\n\nPrompt:\n${item.prompt}`;
 }
 
 async function copyText(text: string): Promise<void> {
@@ -616,16 +616,8 @@ function ImagePromptsView({ prompts }: { prompts: ImagePromptsSet }) {
   return (
     <div className="space-y-8">
       <p className="text-sm text-muted">
-        Copy a prompt and Leonardo settings into{" "}
-        <a
-          href="https://app.leonardo.ai/"
-          className="text-brand hover:underline"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Leonardo.ai
-        </a>
-        . One image per H2 section (pillar/blog) or one per tool page — prompts only, no images generated here.
+        Copy a prompt and settings into your image generator of choice. One image per H2 section (pillar/blog) or
+        one per tool page — prompts only, no images generated here.
       </p>
       {pillarSections.length > 0 && (
         <ImagePromptSectionGroup title="Pillar sections" sections={pillarSections} />
@@ -661,7 +653,7 @@ function ImagePromptCard({ item }: { item: ImagePromptSection }) {
   const [copied, setCopied] = useState<"prompt" | "all" | null>(null);
 
   async function handleCopy(mode: "prompt" | "all") {
-    await copyText(mode === "prompt" ? item.prompt : formatLeonardoCopyBlock(item));
+    await copyText(mode === "prompt" ? item.prompt : formatImageCopyBlock(item));
     setCopied(mode);
     window.setTimeout(() => setCopied(null), 2000);
   }
@@ -690,7 +682,7 @@ function ImagePromptCard({ item }: { item: ImagePromptSection }) {
         </div>
       </div>
       <pre className="mt-3 whitespace-pre-wrap rounded-md border border-border bg-surface p-3 text-xs text-muted">
-        {formatLeonardoSettings(item)}
+        {formatImageSettings(item)}
       </pre>
       <div className="mt-3 whitespace-pre-wrap rounded-md border border-border p-3 text-sm text-foreground">
         {item.prompt}
