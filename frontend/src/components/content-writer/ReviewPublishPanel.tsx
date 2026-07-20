@@ -217,9 +217,15 @@ function VerdictRow({ verdict }: { verdict: ReviewVerdict }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-2 py-0.5 font-medium ${badgeClass}`}>{verdict.status}</span>
         <span className="text-muted">
-          revision {verdict.attemptCount}/3 · reviewed by {verdict.reviewerProvider} ({verdict.reviewerModel})
+          attempt {verdict.attemptCount} · reviewed by {verdict.reviewerProvider} ({verdict.reviewerModel})
         </span>
+        {verdict.retryCount > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+            retried {verdict.retryCount}x
+          </span>
+        )}
       </div>
+      {verdict.retryReason && <p className="mt-2 text-amber-700">{verdict.retryReason}</p>}
       {notes && <p className="mt-2 text-foreground">{notes}</p>}
     </div>
   );

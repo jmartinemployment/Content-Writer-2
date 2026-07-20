@@ -52,23 +52,48 @@ public class GroqProvider : IContentGenerationProvider
             MaxTokens = request.MaxOutputTokens
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.BaseUrl)
-        {
-            Content = JsonContent.Create(payload, options: JsonOptions)
-        };
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
+        // Rate-limit retries only — lower this if you'd rather fail fast than wait out Groq's free-tier TPM cap.
+        const int maxAttempts = 2;
         HttpResponseMessage response;
-        try
-        {
-            response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new ContentGenerationException("Could not reach the Groq API.", ex);
-        }
+        string body;
+        var retryCount = 0;
+        string? retryReason = null;
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        var attempt = 1;
+        while (true)
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.BaseUrl)
+            {
+                Content = JsonContent.Create(payload, options: JsonOptions)
+            };
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            try
+            {
+                response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new ContentGenerationException("Could not reach the Groq API.", ex);
+            }
+
+            body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < maxAttempts)
+            {
+                var delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(attempt * 15);
+                retryCount++;
+                retryReason = $"Groq rate limit (429) on attempt {attempt} — waited {delay.TotalSeconds:0}s and retried.";
+                _logger.LogWarning(
+                    "Groq rate-limited (attempt {Attempt}/{MaxAttempts}) — retrying in {DelaySeconds}s.",
+                    attempt, maxAttempts, delay.TotalSeconds);
+                await Task.Delay(delay, cancellationToken);
+                attempt++;
+                continue;
+            }
+
+            break;
+        }
 
         if (!response.IsSuccessStatusCode)
         {
@@ -86,6 +111,8 @@ public class GroqProvider : IContentGenerationProvider
             Content: choice.Message.Content,
             ModelUsed: parsed.Model ?? model,
             PromptTokens: parsed.Usage?.PromptTokens,
-            CompletionTokens: parsed.Usage?.CompletionTokens);
+            CompletionTokens: parsed.Usage?.CompletionTokens,
+            RetryCount: retryCount,
+            RetryReason: retryReason);
     }
 }

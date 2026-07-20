@@ -17,7 +17,9 @@ public interface IEditorialReviewService
     Task<ReviewOutcome> ReviewAsync(GeneratedContent content, string targetKeyword, CancellationToken cancellationToken = default);
 }
 
-public sealed record ReviewOutcome(ReviewVerdictStatus Status, string NotesJson, LlmProviderType ReviewerProvider, string ReviewerModel);
+public sealed record ReviewOutcome(
+    ReviewVerdictStatus Status, string NotesJson, LlmProviderType ReviewerProvider, string ReviewerModel,
+    int RetryCount = 0, string? RetryReason = null);
 
 public sealed class EditorialReviewService : IEditorialReviewService
 {
@@ -79,7 +81,7 @@ public sealed class EditorialReviewService : IEditorialReviewService
             _ => throw new ContentGenerationException($"Reviewer returned an unrecognized verdict: '{parsed.Verdict}'."),
         };
 
-        return new ReviewOutcome(status, result.Content, reviewer.ProviderType, result.ModelUsed);
+        return new ReviewOutcome(status, result.Content, reviewer.ProviderType, result.ModelUsed, result.RetryCount, result.RetryReason);
     }
 
     /// <summary>Always a different, cheaper model than the writer — Groq (Llama) reviews everything except its own output, which OpenAI reviews instead.</summary>

@@ -24,7 +24,8 @@ public class ReviewController : ControllerBase
         {
             var verdicts = await _reviewLoop.RunForProjectAsync(projectId, cancellationToken);
             return Ok(verdicts.Select(v => new ReviewVerdictResponse(
-                v.Id, v.GeneratedContentId, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel, v.NotesJson, v.CreatedAtUtc)).ToList());
+                v.Id, v.GeneratedContentId, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
+                v.NotesJson, v.RetryCount, v.RetryReason, v.CreatedAtUtc)).ToList());
         }
         catch (ContentGenerationException ex)
         {
@@ -36,4 +37,5 @@ public class ReviewController : ControllerBase
 
 public sealed record ReviewVerdictResponse(
     Guid Id, Guid GeneratedContentId, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,
-    Domain.Enums.LlmProviderType ReviewerProvider, string ReviewerModel, string NotesJson, DateTime CreatedAtUtc);
+    Domain.Enums.LlmProviderType ReviewerProvider, string ReviewerModel, string NotesJson,
+    int RetryCount, string? RetryReason, DateTime CreatedAtUtc);

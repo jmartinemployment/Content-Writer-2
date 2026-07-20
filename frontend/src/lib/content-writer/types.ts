@@ -222,6 +222,8 @@ export interface ReviewVerdict {
   reviewerProvider: LlmProviderType;
   reviewerModel: string;
   notesJson: string;
+  retryCount: number;
+  retryReason: string | null;
   createdAtUtc: string;
 }
 

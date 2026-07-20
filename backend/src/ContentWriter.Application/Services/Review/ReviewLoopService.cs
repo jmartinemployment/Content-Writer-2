@@ -142,6 +142,8 @@ public sealed class ReviewLoopService : IReviewLoopService
             ReviewerProvider = outcome.ReviewerProvider,
             ReviewerModel = outcome.ReviewerModel,
             AttemptCount = attempt,
+            RetryCount = outcome.RetryCount,
+            RetryReason = outcome.RetryReason,
         };
         _db.ReviewVerdicts.Add(verdict);
         await _db.SaveChangesAsync(cancellationToken);

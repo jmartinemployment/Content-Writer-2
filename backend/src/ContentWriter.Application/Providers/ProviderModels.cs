@@ -28,7 +28,9 @@ public record ChatCompletionResult(
     string Content,
     string ModelUsed,
     int? PromptTokens,
-    int? CompletionTokens);
+    int? CompletionTokens,
+    int RetryCount = 0,
+    string? RetryReason = null);
 
 public class ContentGenerationException : Exception
 {
