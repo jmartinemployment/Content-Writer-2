@@ -14,7 +14,8 @@ public interface IReviewLoopService
     /// attempts. No human gate, no held-for-manual-review state. A row that hits the cap without
     /// Approved becomes Exhausted — visible via the live AttemptCount, not silently retried forever.
     /// </summary>
-    Task<List<ReviewVerdict>> RunForProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<List<ReviewVerdict>> RunForProjectAsync(
+        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewLoopService : IReviewLoopService
@@ -34,28 +35,40 @@ public sealed class ReviewLoopService : IReviewLoopService
         _orchestrator = orchestrator;
     }
 
-    public async Task<List<ReviewVerdict>> RunForProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    private static readonly IReadOnlySet<GeneratedContentType> AllReviewableTypes = new HashSet<GeneratedContentType>
+    {
+        GeneratedContentType.TechnicalArticle,
+        GeneratedContentType.BlogPost,
+        GeneratedContentType.ToolPost,
+    };
+
+    public async Task<List<ReviewVerdict>> RunForProjectAsync(
+        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, CancellationToken cancellationToken = default)
     {
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
 
+        var requestedTypes = contentTypes is null or { Count: 0 } ? AllReviewableTypes : contentTypes;
         var verdicts = new List<ReviewVerdict>();
 
-        if (await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.TechnicalArticle, cancellationToken))
+        if (requestedTypes.Contains(GeneratedContentType.TechnicalArticle)
+            && await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.TechnicalArticle, cancellationToken))
         {
             verdicts.Add(await RunSingleRowLoopAsync(
                 projectId, GeneratedContentType.TechnicalArticle, project.TargetKeyword,
                 () => _orchestrator.GeneratePillarBodyAsync(projectId, cancellationToken), cancellationToken));
         }
 
-        if (await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.BlogPost, cancellationToken))
+        if (requestedTypes.Contains(GeneratedContentType.BlogPost)
+            && await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.BlogPost, cancellationToken))
         {
             verdicts.Add(await RunSingleRowLoopAsync(
                 projectId, GeneratedContentType.BlogPost, project.TargetKeyword,
                 () => _orchestrator.GenerateBlogAsync(projectId, cancellationToken), cancellationToken));
         }
 
-        if (await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.ToolPost, cancellationToken))
+        if (requestedTypes.Contains(GeneratedContentType.ToolPost)
+            && await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.ToolPost, cancellationToken))
         {
             verdicts.AddRange(await RunToolPostBatchLoopAsync(projectId, project.TargetKeyword, cancellationToken));
         }

@@ -16,6 +16,7 @@ export default function ReviewPublishPanel({
   const [verdicts, setVerdicts] = useState<ReviewVerdict[] | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewTypes, setReviewTypes] = useState({ pillar: true, blog: true, tools: true });
 
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -47,7 +48,12 @@ export default function ReviewPublishPanel({
     setReviewError(null);
     setIsReviewing(true);
     try {
-      const next = await runReview(projectId);
+      const contentTypes = [
+        reviewTypes.pillar && "TechnicalArticle",
+        reviewTypes.blog && "BlogPost",
+        reviewTypes.tools && "ToolPost",
+      ].filter((t): t is string => Boolean(t));
+      const next = await runReview(projectId, contentTypes);
       setVerdicts(next);
     } catch (err) {
       setReviewError(err instanceof ApiError ? err.message : "Review failed.");
@@ -93,13 +99,41 @@ export default function ReviewPublishPanel({
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-foreground">8. Editorial Review</h2>
       <p className="mt-1 text-sm text-muted">
-        A different model reviews each row (invented-feature/fact check, brand-voice consistency) —
-        single pass, no revise-and-retry. Only Approved rows can publish.
+        A different model reviews each selected row (invented-feature/fact check, brand-voice consistency) —
+        single pass, no revise-and-retry. Optional: unreviewed rows can still be exported, but publish
+        requires an Approved verdict. Reviewing fewer rows at once also avoids provider rate limits.
       </p>
+
+      <div className="mt-3 flex flex-wrap gap-4 text-sm text-foreground">
+        <label className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={reviewTypes.pillar}
+            onChange={(e) => setReviewTypes((t) => ({ ...t, pillar: e.target.checked }))}
+          />
+          Pillar
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={reviewTypes.blog}
+            onChange={(e) => setReviewTypes((t) => ({ ...t, blog: e.target.checked }))}
+          />
+          Blog
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={reviewTypes.tools}
+            onChange={(e) => setReviewTypes((t) => ({ ...t, tools: e.target.checked }))}
+          />
+          Tools
+        </label>
+      </div>
 
       <button
         onClick={handleReview}
-        disabled={isReviewing}
+        disabled={isReviewing || !(reviewTypes.pillar || reviewTypes.blog || reviewTypes.tools)}
         className="mt-4 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-60"
       >
         {isReviewing ? "Reviewing..." : verdicts ? "Re-run review" : "Run review"}
@@ -177,8 +211,8 @@ export default function ReviewPublishPanel({
       <div className="mt-6 border-t border-border pt-5">
         <h3 className="text-sm font-semibold text-foreground">10. Export .mdx files</h3>
         <p className="mt-1 text-xs text-muted">
-          Downloads a .zip of the approved article/blog/tool content as .mdx files (YAML frontmatter + Markdown
-          body) — same Approved-verdict gate as publish above.
+          Downloads a .zip of the eligible content as .mdx files (YAML frontmatter + Markdown body). Review
+          is optional here — a never-reviewed row is included, only a row reviewed and NOT Approved is excluded.
         </p>
 
         <button

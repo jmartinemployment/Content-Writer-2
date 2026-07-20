@@ -54,8 +54,8 @@ public class MdxExportService : IMdxExportService
         if (documents.Count == 0)
         {
             throw new ContentGenerationException(
-                "Nothing to export. Generate content and run the review loop (POST .../review) first — " +
-                "only rows with an Approved ReviewVerdict are eligible.");
+                "Nothing to export. Generate content first — review is optional, but any row that WAS " +
+                "reviewed and isn't Approved is excluded.");
         }
 
         return documents;
@@ -140,7 +140,10 @@ public class MdxExportService : IMdxExportService
         return $"{key}: [{string.Join(", ", values.Select(YamlString))}]";
     }
 
-    /// <summary>Export gate: a row exports only if its most recent ReviewVerdict is Approved, matching the GeekBackend publish gate.</summary>
-    private static bool IsApproved(GeneratedContent row) =>
-        row.ReviewVerdicts.OrderByDescending(v => v.CreatedAtUtc).FirstOrDefault()?.Status == ReviewVerdictStatus.Approved;
+    /// <summary>Export gate: review is opt-in, not mandatory — a row with no verdict at all is allowed through. Only a row that WAS reviewed and isn't Approved gets blocked.</summary>
+    private static bool IsApproved(GeneratedContent row)
+    {
+        var latest = row.ReviewVerdicts.OrderByDescending(v => v.CreatedAtUtc).FirstOrDefault();
+        return latest is null || latest.Status == ReviewVerdictStatus.Approved;
+    }
 }

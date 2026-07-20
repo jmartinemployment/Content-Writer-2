@@ -177,8 +177,11 @@ export function generateAllContent(projectId: string): Promise<GeneratedContentS
   return request<GeneratedContentSet>(`/api/projects/${projectId}/generate`, { method: "POST" });
 }
 
-export function runReview(projectId: string): Promise<ReviewVerdict[]> {
-  return request<ReviewVerdict[]>(`/api/projects/${projectId}/review`, { method: "POST" });
+export function runReview(projectId: string, contentTypes?: string[]): Promise<ReviewVerdict[]> {
+  return request<ReviewVerdict[]>(`/api/projects/${projectId}/review`, {
+    method: "POST",
+    body: JSON.stringify(contentTypes?.length ? { contentTypes } : {}),
+  });
 }
 
 export async function getGeekBackendCategories(clientId: string, lang = "en"): Promise<CategoryOption[]> {

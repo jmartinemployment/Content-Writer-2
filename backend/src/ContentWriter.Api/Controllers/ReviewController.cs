@@ -1,5 +1,6 @@
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services.Review;
+using ContentWriter.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContentWriter.Api.Controllers;
@@ -18,11 +19,16 @@ public class ReviewController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<List<ReviewVerdictResponse>>> Run(Guid projectId, CancellationToken cancellationToken)
+    public async Task<ActionResult<List<ReviewVerdictResponse>>> Run(
+        Guid projectId, [FromBody] RunReviewRequest? request, CancellationToken cancellationToken)
     {
         try
         {
-            var verdicts = await _reviewLoop.RunForProjectAsync(projectId, cancellationToken);
+            var contentTypes = request?.ContentTypes is { Count: > 0 }
+                ? new HashSet<GeneratedContentType>(request.ContentTypes)
+                : null;
+
+            var verdicts = await _reviewLoop.RunForProjectAsync(projectId, contentTypes, cancellationToken);
             return Ok(verdicts.Select(v => new ReviewVerdictResponse(
                 v.Id, v.GeneratedContentId, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
                 v.NotesJson, v.RetryCount, v.RetryReason, v.CreatedAtUtc)).ToList());
@@ -34,6 +40,8 @@ public class ReviewController : ControllerBase
         }
     }
 }
+
+public sealed record RunReviewRequest(List<GeneratedContentType>? ContentTypes);
 
 public sealed record ReviewVerdictResponse(
     Guid Id, Guid GeneratedContentId, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,
