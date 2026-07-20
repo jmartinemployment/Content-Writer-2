@@ -12,15 +12,18 @@ public class ExportController : ControllerBase
 {
     private readonly IGeekBlogPublishService _publishService;
     private readonly IMdxExportService _mdxExportService;
+    private readonly IGeekatyourspotCommitService _commitService;
     private readonly ILogger<ExportController> _logger;
 
     public ExportController(
         IGeekBlogPublishService publishService,
         IMdxExportService mdxExportService,
+        IGeekatyourspotCommitService commitService,
         ILogger<ExportController> logger)
     {
         _publishService = publishService;
         _mdxExportService = mdxExportService;
+        _commitService = commitService;
         _logger = logger;
     }
 
@@ -88,7 +91,24 @@ public class ExportController : ControllerBase
         zipStream.Position = 0;
         return File(zipStream.ToArray(), "application/zip", $"{projectId}-mdx-export.zip");
     }
+
+    [HttpPost("export/mdx/commit")]
+    public async Task<IActionResult> CommitMdxExport(Guid projectId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _commitService.CommitExportAsync(projectId, cancellationToken);
+            return Ok(new CommitMdxExportResponse(result.CommitSha, result.CommitUrl, result.FilePaths));
+        }
+        catch (ContentGenerationException ex)
+        {
+            _logger.LogWarning(ex, "Commit-to-geekatyourspot failed for project {ProjectId}", projectId);
+            return Problem(ex.Message, statusCode: 400, title: "Commit failed");
+        }
+    }
 }
+
+public sealed record CommitMdxExportResponse(string CommitSha, string CommitUrl, IReadOnlyList<string> FilePaths);
 
 public sealed record PublishRequest(string? Department);
 

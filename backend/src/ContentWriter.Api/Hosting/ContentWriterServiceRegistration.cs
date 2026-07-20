@@ -83,6 +83,8 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IGeekRepository, GeekRepository>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
         services.AddScoped<IMdxExportService, MdxExportService>();
+        services.AddHttpClient("GitHub");
+        services.AddScoped<IGeekatyourspotCommitService, GeekatyourspotCommitService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
 
         services.AddScoped<IEditorialReviewService, EditorialReviewService>();

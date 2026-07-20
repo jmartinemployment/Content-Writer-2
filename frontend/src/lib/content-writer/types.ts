@@ -198,6 +198,12 @@ export interface PublishResult {
   posts: PublishedPost[];
 }
 
+export interface CommitMdxExportResult {
+  commitSha: string;
+  commitUrl: string;
+  filePaths: string[];
+}
+
 export interface GeneratedContentSet {
   article: ArticleDraft | null;
   articleSlug: string | null;

@@ -1,8 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { downloadMdxExport, getGeekBackendCategories, publishToGeekBlog, runReview, ApiError } from "@/lib/content-writer/api";
-import type { CategoryOption, GeneratedContentSet, PublishResult, ReviewVerdict } from "@/lib/content-writer/types";
+import {
+  commitMdxExportToGitHub,
+  downloadMdxExport,
+  getGeekBackendCategories,
+  publishToGeekBlog,
+  runReview,
+  ApiError,
+} from "@/lib/content-writer/api";
+import type {
+  CategoryOption,
+  CommitMdxExportResult,
+  GeneratedContentSet,
+  PublishResult,
+  ReviewVerdict,
+} from "@/lib/content-writer/types";
 
 export default function ReviewPublishPanel({
   projectId,
@@ -27,6 +40,10 @@ export default function ReviewPublishPanel({
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitResult, setCommitResult] = useState<CommitMdxExportResult | null>(null);
 
   const hasPublishableContent = (result?.article?.wordCount ?? 0) > 0 || result?.blog != null;
 
@@ -85,6 +102,20 @@ export default function ReviewPublishPanel({
       setExportError(err instanceof ApiError ? err.message : "Export failed.");
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleCommit() {
+    setCommitError(null);
+    setCommitResult(null);
+    setIsCommitting(true);
+    try {
+      const next = await commitMdxExportToGitHub(projectId);
+      setCommitResult(next);
+    } catch (err) {
+      setCommitError(err instanceof ApiError ? err.message : "Commit failed.");
+    } finally {
+      setIsCommitting(false);
     }
   }
 
@@ -215,16 +246,44 @@ export default function ReviewPublishPanel({
           is optional here — a never-reviewed row is included, only a row reviewed and NOT Approved is excluded.
         </p>
 
-        <button
-          type="button"
-          disabled={isExporting}
-          onClick={handleExport}
-          className="mt-3 rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
-        >
-          {isExporting ? "Exporting..." : "Export .mdx files"}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={handleExport}
+            className="mt-3 rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
+          >
+            {isExporting ? "Exporting..." : "Export .mdx files (.zip)"}
+          </button>
+
+          <button
+            type="button"
+            disabled={isCommitting}
+            onClick={handleCommit}
+            className="mt-3 rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
+          >
+            {isCommitting ? "Committing..." : "Commit to geekatyourspot"}
+          </button>
+        </div>
 
         {exportError && <p className="mt-3 text-sm text-red-600">{exportError}</p>}
+        {commitError && <p className="mt-3 text-sm text-red-600">{commitError}</p>}
+
+        {commitResult && (
+          <div className="mt-3 rounded-md bg-green-50 p-3 text-xs text-green-900">
+            <p className="font-medium">
+              Committed {commitResult.filePaths.length} file(s) —{" "}
+              <a href={commitResult.commitUrl} target="_blank" className="underline">
+                view commit
+              </a>
+            </p>
+            <ul className="mt-2 space-y-1 font-mono">
+              {commitResult.filePaths.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

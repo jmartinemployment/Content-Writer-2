@@ -1,6 +1,7 @@
 import type {
   CategoryOption,
   Client,
+  CommitMdxExportResult,
   CrawlSummary,
   GeneratedContentSet,
   KeywordSourceCategory,
@@ -223,6 +224,10 @@ export async function downloadMdxExport(projectId: string): Promise<void> {
   link.download = `${projectId}-mdx-export.zip`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export function commitMdxExportToGitHub(projectId: string): Promise<CommitMdxExportResult> {
+  return request<CommitMdxExportResult>(`/api/projects/${projectId}/export/mdx/commit`, { method: "POST" });
 }
 
 export function getLmStudioStatus(): Promise<LmStudioHealthStatus> {
