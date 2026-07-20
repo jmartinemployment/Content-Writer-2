@@ -67,9 +67,11 @@ public static class GeneratedContentSetAssembler
     private static ImagePromptsContent? BuildImagePrompts(Project project)
     {
         var sectionRows = project.GeneratedContents
-            .Where(c => c.ContentType == GeneratedContentType.ImagePromptSection)
+            .Where(c => c.ContentType is GeneratedContentType.ImagePromptSection
+                or GeneratedContentType.ImagePromptPillarFigure
+                or GeneratedContentType.ImagePromptBlogFigure)
             .Select(ImagePromptMetadata.ToSectionContent)
-            .OrderBy(s => s.SourceType == "pillar" ? 0 : 1)
+            .OrderBy(s => s.SourceType switch { "pillar-hero" => 0, "pillar" => 1, "blog-hero" => 2, "blog" => 3, _ => 4 })
             .ThenBy(s => s.Order)
             .ToList();
 

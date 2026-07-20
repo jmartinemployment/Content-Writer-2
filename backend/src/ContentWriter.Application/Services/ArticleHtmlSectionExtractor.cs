@@ -103,11 +103,25 @@ public static class ArticleHtmlSectionExtractor
     }
 
     public static IReadOnlyList<ImagePromptSectionTarget> BuildSectionTargets(
+        string? pillarTitle,
         string? pillarBodyMarkdown,
+        string? blogTitle,
         string? blogBodyMarkdown,
         IReadOnlyList<string>? toolTitles = null)
     {
         var targets = new List<ImagePromptSectionTarget>();
+
+        // One H1/title-level hero figure each for the pillar and blog, distinct from their H2 section illustrations.
+        if (!string.IsNullOrWhiteSpace(pillarTitle))
+        {
+            targets.Add(new ImagePromptSectionTarget("pillar-hero", pillarTitle, 0));
+        }
+
+        if (!string.IsNullOrWhiteSpace(blogTitle))
+        {
+            targets.Add(new ImagePromptSectionTarget("blog-hero", blogTitle, 0));
+        }
+
         var order = 1;
 
         foreach (var heading in ExtractH2Headings(pillarBodyMarkdown))

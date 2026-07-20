@@ -98,7 +98,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         "{\"subject\": string, \"bodyText\": string (50-125 words), \"ctaLabel\": string}";
 
     private const string ImagePromptSectionItemJsonContract =
-        "{\"sourceType\": \"pillar|blog\", \"heading\": string (exact H2 text), \"order\": number, \"prompt\": string (40-400 words), \"width\": number, \"height\": number, \"imageModel\": string, \"stylePreset\": string, \"alchemy\": boolean, \"photoReal\": boolean, \"notes\": string|null}";
+        "{\"sourceType\": \"pillar-hero|blog-hero|pillar|blog\", \"heading\": string (exact H2 text, or the exact title for a -hero item), \"order\": number, \"prompt\": string (40-400 words), \"width\": number, \"height\": number, \"imageModel\": string, \"stylePreset\": string, \"alchemy\": boolean, \"photoReal\": boolean, \"notes\": string|null}";
 
     private const string ImagePromptSectionsJsonContract =
         "{\"sections\": [" + ImagePromptSectionItemJsonContract + ", ...]}";
@@ -496,14 +496,15 @@ public class ContentPromptBuilder : IContentPromptBuilder
         IReadOnlyList<ImagePromptSectionTarget> sections)
     {
         var system = new StringBuilder()
-            .AppendLine("You write AI image-generation prompts for inline B2B article figures.")
-            .AppendLine("Return ONE prompt per listed <h2> section — the user pastes each into their image generator manually.")
+            .AppendLine("You write AI image-generation prompts for B2B article figures.")
+            .AppendLine("Return ONE prompt per listed item — the user pastes each into their image generator manually.")
             .AppendLine()
             .AppendLine("VISUAL STYLE:")
             .AppendLine("- Flat vector / infographic, professional fintech or B2B tech aesthetic.")
             .AppendLine($"- Default size: {ImagePromptDefaults.PillarWidth}x{ImagePromptDefaults.PillarHeight}. Style: {ImagePromptDefaults.PillarStylePreset}.")
             .AppendLine("- NO readable text, logos, or watermarks in the image.")
-            .AppendLine("- Pillar sections: teaching diagram, slightly more technical.")
+            .AppendLine("- pillar-hero / blog-hero (exactly one each): the H1/title hero banner image for that piece — represents it as a whole, not any one section. Wider establishing-shot composition (not a diagram), evokes the title's theme and stakes at a glance. blog-hero should look distinct from pillar-hero even on the same topic — warmer/more approachable, matching the blog's conversational tone vs. the pillar's technical one.")
+            .AppendLine("- Pillar H2 sections: teaching diagram, slightly more technical.")
             .AppendLine("- Blog sections: warmer step-by-step feel, still no readable text.")
             .AppendLine("- People Also Ask: abstract Q&A bubbles/shapes without words.")
             .AppendLine("- Tools sections: generic software tiles/icons — no brand names.")

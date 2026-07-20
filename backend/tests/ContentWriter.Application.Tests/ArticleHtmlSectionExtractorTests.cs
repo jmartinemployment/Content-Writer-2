@@ -23,17 +23,19 @@ public class ArticleHtmlSectionExtractorTests
     }
 
     [Fact]
-    public void BuildSectionTargets_numbers_pillar_and_blog_independently()
+    public void BuildSectionTargets_leads_with_pillar_and_blog_hero_then_numbers_sections_independently()
     {
         var pillar = "## Pillar A\n\nbody\n\n## Pillar B\n\nbody";
         var blog = "## Blog one\n\nbody";
 
-        var targets = ArticleHtmlSectionExtractor.BuildSectionTargets(pillar, blog);
+        var targets = ArticleHtmlSectionExtractor.BuildSectionTargets("Pillar Title", pillar, "Blog Title", blog);
 
-        Assert.Equal(3, targets.Count);
-        Assert.Equal(("pillar", "Pillar A", 1), (targets[0].SourceType, targets[0].Heading, targets[0].Order));
-        Assert.Equal(("pillar", "Pillar B", 2), (targets[1].SourceType, targets[1].Heading, targets[1].Order));
-        Assert.Equal(("blog", "Blog one", 1), (targets[2].SourceType, targets[2].Heading, targets[2].Order));
+        Assert.Equal(5, targets.Count);
+        Assert.Equal(("pillar-hero", "Pillar Title", 0), (targets[0].SourceType, targets[0].Heading, targets[0].Order));
+        Assert.Equal(("blog-hero", "Blog Title", 0), (targets[1].SourceType, targets[1].Heading, targets[1].Order));
+        Assert.Equal(("pillar", "Pillar A", 1), (targets[2].SourceType, targets[2].Heading, targets[2].Order));
+        Assert.Equal(("pillar", "Pillar B", 2), (targets[3].SourceType, targets[3].Heading, targets[3].Order));
+        Assert.Equal(("blog", "Blog one", 1), (targets[4].SourceType, targets[4].Heading, targets[4].Order));
     }
 
     [Fact]

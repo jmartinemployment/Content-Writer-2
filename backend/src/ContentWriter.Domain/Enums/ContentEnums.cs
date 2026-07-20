@@ -43,7 +43,8 @@ public enum GeneratedContentType
     ImagePromptSocialFacebook = 9,
     ImagePromptSocialLinkedIn = 10,
     ImagePromptSection = 11,
-    ToolPost = 12
+    ToolPost = 12,
+    ImagePromptBlogFigure = 13
 }
 
 /// <summary>How a client's published URLs are grouped into categories/departments.</summary>

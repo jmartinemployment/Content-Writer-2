@@ -367,7 +367,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             .Select(c => string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.Title : c.DisplayTitle!)
             .ToList();
 
-        var sections = ArticleHtmlSectionExtractor.BuildSectionTargets(articleRow.BodyHtml, blogRow.BodyHtml, toolTitles);
+        var sections = ArticleHtmlSectionExtractor.BuildSectionTargets(
+            articleRow.DisplayTitle ?? articleRow.Title,
+            articleRow.BodyHtml,
+            blogRow.DisplayTitle ?? blogRow.Title,
+            blogRow.BodyHtml,
+            toolTitles);
         if (sections.Count == 0)
         {
             throw new ContentGenerationException(
@@ -382,6 +387,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         RemoveGeneratedContents(project,
             GeneratedContentType.ImagePromptPillarFigure,
+            GeneratedContentType.ImagePromptBlogFigure,
             GeneratedContentType.ImagePromptSocialFacebook,
             GeneratedContentType.ImagePromptSocialLinkedIn,
             GeneratedContentType.ImagePromptSection);
@@ -523,15 +529,24 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         ImagePromptSectionDraft item,
         CancellationToken cancellationToken)
     {
+        var isPillarHero = item.SourceType.Equals("pillar-hero", StringComparison.OrdinalIgnoreCase);
+        var isBlogHero = item.SourceType.Equals("blog-hero", StringComparison.OrdinalIgnoreCase);
         var headingSlug = SlugHelper.Slugify(item.Heading);
         var wordCount = item.Prompt.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+        var contentType = isPillarHero ? GeneratedContentType.ImagePromptPillarFigure
+            : isBlogHero ? GeneratedContentType.ImagePromptBlogFigure
+            : GeneratedContentType.ImagePromptSection;
+        var slug = isPillarHero || isBlogHero
+            ? $"{articleSlug}-{item.SourceType}"
+            : $"{articleSlug}-{item.SourceType}-h2-{headingSlug}";
 
         await AddContentAsync(project, providerType, new GeneratedContent
         {
             ProjectId = project.Id,
-            ContentType = GeneratedContentType.ImagePromptSection,
+            ContentType = contentType,
             Title = item.Heading,
-            Slug = $"{articleSlug}-{item.SourceType}-h2-{headingSlug}",
+            Slug = slug,
             BodyHtml = item.Prompt,
             MetaDescription = ImagePromptMetadata.Serialize(item),
             RelatedArticleUrl = articleUrl,
