@@ -371,7 +371,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         if (sections.Count == 0)
         {
             throw new ContentGenerationException(
-                "Pillar and blog must each include at least one <h2> section before generating image prompts.");
+                "Pillar and blog must each include at least one \"## \" section before generating image prompts.");
         }
 
         _logger.LogInformation(

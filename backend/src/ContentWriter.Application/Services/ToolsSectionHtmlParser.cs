@@ -1,23 +1,25 @@
 using System.Text.RegularExpressions;
 using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.SchemaBuilders;
+using Markdig;
+using Markdig.Syntax;
 
 namespace ContentWriter.Application.Services;
 
-/// <summary>Extracts platform names from the pillar Tools section for SoftwareApplication JSON+LD.</summary>
+/// <summary>Extracts platform names from the pillar Tools section (Markdown) for SoftwareApplication JSON+LD.</summary>
 public static class ToolsSectionHtmlParser
 {
-    private static readonly Regex HeadingPattern = new(
-        @"<h([2-4])[^>]*>(.*?)</h\1>",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    private sealed record HeadingInfo(int Level, string Text, SourceSpan Span);
 
     public static IReadOnlyList<SoftwareApplicationDescriptor> ExtractApplications(
-        string bodyHtml,
+        string bodyMarkdown,
         IReadOnlyList<string> sectionOutline) =>
-        DiagnoseExtraction(bodyHtml, sectionOutline).Applications;
+        DiagnoseExtraction(bodyMarkdown, sectionOutline).Applications;
 
     public static ToolExtractionResult DiagnoseExtraction(
-        string bodyHtml,
+        string bodyMarkdown,
         IReadOnlyList<string> sectionOutline)
     {
         if (sectionOutline.Count == 0)
@@ -31,20 +33,23 @@ public static class ToolsSectionHtmlParser
             return new ToolExtractionResult(ToolGenerationOutcome.NoToolsSection, []);
         }
 
-        if (string.IsNullOrWhiteSpace(bodyHtml))
+        if (string.IsNullOrWhiteSpace(bodyMarkdown))
         {
             return new ToolExtractionResult(ToolGenerationOutcome.ToolsSectionNotFoundInBody, []);
         }
 
-        var matches = HeadingPattern.Matches(bodyHtml).Cast<Match>().ToList();
-        if (matches.Count == 0)
+        var document = Markdig.Markdown.Parse(bodyMarkdown, Pipeline);
+        var headings = document.OfType<HeadingBlock>()
+            .Select(h => new HeadingInfo(h.Level, HeadingText(bodyMarkdown, h), h.Span))
+            .ToList();
+
+        if (headings.Count == 0)
         {
             return new ToolExtractionResult(ToolGenerationOutcome.ToolsSectionNotFoundInBody, []);
         }
 
-        var toolsIndex = matches.FindIndex(match =>
-            int.Parse(match.Groups[1].Value) == 2
-            && StripTags(match.Groups[2].Value).Equals(toolsHeading, StringComparison.OrdinalIgnoreCase));
+        var toolsIndex = headings.FindIndex(h =>
+            h.Level == 2 && h.Text.Equals(toolsHeading, StringComparison.OrdinalIgnoreCase));
 
         if (toolsIndex < 0)
         {
@@ -53,20 +58,19 @@ public static class ToolsSectionHtmlParser
 
         var applications = new List<SoftwareApplicationDescriptor>();
         var seenSlugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = toolsIndex + 1; i < matches.Count; i++)
+        for (var i = toolsIndex + 1; i < headings.Count; i++)
         {
-            var level = int.Parse(matches[i].Groups[1].Value);
-            if (level == 2)
+            if (headings[i].Level == 2)
             {
                 break;
             }
 
-            if (level != 3)
+            if (headings[i].Level != 3)
             {
                 continue;
             }
 
-            var name = StripTags(matches[i].Groups[2].Value);
+            var name = headings[i].Text;
             if (string.IsNullOrWhiteSpace(name)
                 || name.StartsWith("How an AI implementer", StringComparison.OrdinalIgnoreCase))
             {
@@ -78,7 +82,8 @@ public static class ToolsSectionHtmlParser
                 continue;
             }
 
-            var description = ExtractFollowingParagraph(bodyHtml, matches[i].Index + matches[i].Length);
+            var sectionEnd = i + 1 < headings.Count ? headings[i + 1].Span.Start : bodyMarkdown.Length;
+            var description = ExtractFollowingParagraph(bodyMarkdown, headings[i].Span.End + 1, sectionEnd);
             applications.Add(new SoftwareApplicationDescriptor(name, description));
         }
 
@@ -91,23 +96,23 @@ public static class ToolsSectionHtmlParser
     }
 
     public static string InjectToolLinks(
-        string bodyHtml,
+        string bodyMarkdown,
         IReadOnlyList<string> sectionOutline,
         string toolBaseUrl,
         IReadOnlyList<(string AppName, string ToolSlug)> tools)
     {
-        if (string.IsNullOrWhiteSpace(bodyHtml) || tools.Count == 0)
+        if (string.IsNullOrWhiteSpace(bodyMarkdown) || tools.Count == 0)
         {
-            return bodyHtml;
+            return bodyMarkdown;
         }
 
         var toolsHeading = sectionOutline.FirstOrDefault(PillarSectionClassifier.IsToolsSection);
         if (string.IsNullOrWhiteSpace(toolsHeading))
         {
-            return bodyHtml;
+            return bodyMarkdown;
         }
 
-        var result = bodyHtml;
+        var result = bodyMarkdown;
         foreach (var (appName, toolSlug) in tools)
         {
             if (string.IsNullOrWhiteSpace(appName))
@@ -116,31 +121,40 @@ public static class ToolsSectionHtmlParser
             }
 
             var href = $"{toolBaseUrl.TrimEnd('/')}/{toolSlug}";
-            var pattern = $@"(<h3[^>]*>)(\s*{Regex.Escape(appName)}\s*)(</h3>)";
+            var pattern = $@"^(###\s+)({Regex.Escape(appName)})\s*$";
             result = Regex.Replace(
                 result,
                 pattern,
-                $"$1<a href=\"{href}\">$2</a>$3",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline,
+                $"$1[$2]({href})",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline,
                 TimeSpan.FromSeconds(2));
         }
 
         return result;
     }
 
-    private static string? ExtractFollowingParagraph(string html, int startIndex)
+    private static string? ExtractFollowingParagraph(string markdown, int start, int end)
     {
-        var slice = html[startIndex..];
-        var match = Regex.Match(slice, @"<p[^>]*>(.*?)</p>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        if (!match.Success)
+        if (start >= end || start >= markdown.Length)
         {
             return null;
         }
 
-        var text = StripTags(match.Groups[1].Value);
+        var slice = markdown[start..Math.Min(end, markdown.Length)];
+        var document = Markdig.Markdown.Parse(slice, Pipeline);
+        var paragraph = document.OfType<ParagraphBlock>().FirstOrDefault();
+        if (paragraph is null)
+        {
+            return null;
+        }
+
+        var text = slice[paragraph.Span.Start..(paragraph.Span.End + 1)].Trim();
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    private static string StripTags(string html) =>
-        Regex.Replace(html, "<[^>]+>", " ").Replace("&nbsp;", " ").Trim();
+    private static string HeadingText(string markdown, HeadingBlock heading)
+    {
+        var raw = markdown[heading.Span.Start..(heading.Span.End + 1)];
+        return raw.TrimStart('#').Trim();
+    }
 }

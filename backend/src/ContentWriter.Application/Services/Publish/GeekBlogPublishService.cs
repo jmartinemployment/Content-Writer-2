@@ -4,6 +4,7 @@ using ContentWriter.Application.Services.Export;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 using ContentWriter.Infrastructure.Repositories;
+using Markdig;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -28,9 +29,9 @@ public sealed record GeekBlogPublishedPost(
 public sealed record GeekBlogPublishResult(string CategorySlug, IReadOnlyList<GeekBlogPublishedPost> Posts);
 
 /// <summary>
-/// Publishes assembled project content straight into GeekBackend's geek_blog schema via `api/blog`,
-/// replacing the old markdown export step. Splits BodyHtml into flat post_sections on &lt;h2&gt;
-/// boundaries using the same rule as GeekBackend's GeekApplication/Blog/HtmlSectionSplitter.cs.
+/// Publishes assembled project content straight into GeekBackend's geek_blog schema via `api/blog`.
+/// Splits the native Markdown body into flat post_sections on "## " boundaries, then renders each
+/// section's Markdown to HTML since GeekBackend's post_sections are HTML-rendered.
 /// </summary>
 public class GeekBlogPublishService : IGeekBlogPublishService
 {
@@ -203,7 +204,8 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         CancellationToken cancellationToken)
     {
         var sections = ArticleHtmlSectionExtractor.Split(bodyHtml)
-            .Select(s => new GeekBlogSectionPayload(s.SortOrder, s.HeadingTag, s.HeadingText, s.BodyContent, s.MediaUrl, s.MediaAlt))
+            .Select(s => new GeekBlogSectionPayload(
+                s.SortOrder, s.HeadingTag, s.HeadingText, MarkdownToHtml(s.BodyContent), s.MediaUrl, s.MediaAlt))
             .ToList();
 
         // LLM-written alongside the other summary variants (GenerateSummaryVariantsAsync), so it's
@@ -245,15 +247,19 @@ public class GeekBlogPublishService : IGeekBlogPublishService
         return new GeekBlogPublishedPost(contentType, result.PostId, result.Slug, result.LanguageCode, result.SectionCount, result.WasUpdated);
     }
 
-    private static string DeriveSummaryFromBody(string bodyHtml)
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    /// <summary>Publish is GeekBackend's HTML-rendered path — convert the native Markdown/MDX body at this one boundary.</summary>
+    private static string MarkdownToHtml(string markdown) =>
+        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Markdown.ToHtml(markdown, MarkdownPipeline).Trim();
+
+    private static string DeriveSummaryFromBody(string bodyMarkdown)
     {
-        if (string.IsNullOrWhiteSpace(bodyHtml))
+        if (string.IsNullOrWhiteSpace(bodyMarkdown))
             return string.Empty;
 
-        var firstParagraphMatch = Regex.Match(
-            bodyHtml, @"<p[^>]*>(.*?)</p>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        var source = firstParagraphMatch.Success ? firstParagraphMatch.Groups[1].Value : bodyHtml;
-        var stripped = Regex.Replace(source, "<[^>]+>", " ").Trim();
+        var firstParagraph = Regex.Split(bodyMarkdown.Trim(), @"\n\s*\n").FirstOrDefault() ?? bodyMarkdown;
+        var stripped = Regex.Replace(firstParagraph, @"[#*_`>-]", " ").Trim();
         stripped = Regex.Replace(stripped, @"\s+", " ");
 
         return stripped.Length > 500 ? stripped[..500].TrimEnd() : stripped;

@@ -1,10 +1,9 @@
-using System.Text;
-using System.Text.RegularExpressions;
-using HtmlAgilityPack;
+using Markdig;
+using Markdig.Syntax;
 
 namespace ContentWriter.Application.Services;
 
-/// <summary>One flat HTML section, matching a geek_blog.post_sections row.</summary>
+/// <summary>One flat section split from a Markdown body, matching a geek_blog.post_sections row.</summary>
 public sealed record HtmlSection(
     int SortOrder,
     string? HeadingTag,
@@ -15,88 +14,72 @@ public sealed record HtmlSection(
 
 public static class ArticleHtmlSectionExtractor
 {
-    private static readonly Regex H2Regex = new(
-        @"<h2[^>]*>(.*?)</h2>",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
 
     /// <summary>
-    /// Splits a single HTML blob into ordered <see cref="HtmlSection"/> rows on &lt;h2&gt; boundaries.
-    /// Any content before the first &lt;h2&gt; becomes sort_order 0 with a null heading.
-    /// Mirrors GeekBackend's GeekApplication/Blog/HtmlSectionSplitter.cs splitting rule exactly.
+    /// Splits a Markdown body into ordered <see cref="HtmlSection"/> rows on H2 ("## ") boundaries,
+    /// using Markdig's AST rather than regex so code fences/blockquotes containing "##" aren't
+    /// mistaken for headings. Any content before the first H2 becomes sort_order 0 with a null heading.
     /// </summary>
-    public static IReadOnlyList<HtmlSection> Split(string? html)
+    public static IReadOnlyList<HtmlSection> Split(string? markdown)
     {
-        if (string.IsNullOrWhiteSpace(html))
+        if (string.IsNullOrWhiteSpace(markdown))
             return [];
 
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
+        var h2s = TopLevelHeadings(markdown, level: 2);
+        if (h2s.Count == 0)
+        {
+            var whole = markdown.Trim();
+            return whole.Length == 0 ? [] : [new HtmlSection(0, null, null, whole)];
+        }
 
         var sections = new List<HtmlSection>();
         var sortOrder = 0;
-        string? currentHeadingTag = null;
-        string? currentHeadingText = null;
-        var buffer = new StringBuilder();
 
-        void Flush()
+        if (h2s[0].Span.Start > 0)
         {
-            var bodyContent = buffer.ToString().Trim();
-            if (bodyContent.Length == 0 && currentHeadingTag is null)
+            var lead = markdown[..h2s[0].Span.Start].Trim();
+            if (lead.Length > 0)
             {
-                buffer.Clear();
-                return;
+                sections.Add(new HtmlSection(sortOrder++, null, null, lead));
             }
-
-            sections.Add(new HtmlSection(sortOrder, currentHeadingTag, currentHeadingText, bodyContent));
-            sortOrder++;
-            buffer.Clear();
         }
 
-        foreach (var node in doc.DocumentNode.ChildNodes.ToList())
+        for (var i = 0; i < h2s.Count; i++)
         {
-            if (node.NodeType == HtmlNodeType.Element
-                && string.Equals(node.Name, "h2", StringComparison.OrdinalIgnoreCase))
-            {
-                Flush();
-                currentHeadingTag = "h2";
-                currentHeadingText = HtmlEntity.DeEntitize(node.InnerText)?.Trim() ?? string.Empty;
-                continue;
-            }
+            var bodyStart = h2s[i].Span.End + 1;
+            var bodyEnd = i + 1 < h2s.Count ? h2s[i + 1].Span.Start : markdown.Length;
+            var body = bodyStart < bodyEnd ? markdown[bodyStart..bodyEnd].Trim() : string.Empty;
 
-            buffer.Append(node.OuterHtml);
+            sections.Add(new HtmlSection(sortOrder++, "h2", h2s[i].Text, body));
         }
-
-        Flush();
 
         return sections;
     }
 
-    public static IReadOnlyList<string> ExtractH2Headings(string? bodyHtml)
+    public static IReadOnlyList<string> ExtractH2Headings(string? bodyMarkdown)
     {
-        if (string.IsNullOrWhiteSpace(bodyHtml))
+        if (string.IsNullOrWhiteSpace(bodyMarkdown))
             return [];
 
-        return H2Regex.Matches(bodyHtml)
-            .Select(m => StripTags(m.Groups[1].Value).Trim())
-            .Where(h => !string.IsNullOrWhiteSpace(h))
-            .ToList();
+        return TopLevelHeadings(bodyMarkdown, level: 2).Select(h => h.Text).ToList();
     }
 
     public static IReadOnlyList<ImagePromptSectionTarget> BuildSectionTargets(
-        string? pillarBodyHtml,
-        string? blogBodyHtml,
+        string? pillarBodyMarkdown,
+        string? blogBodyMarkdown,
         IReadOnlyList<string>? toolTitles = null)
     {
         var targets = new List<ImagePromptSectionTarget>();
         var order = 1;
 
-        foreach (var heading in ExtractH2Headings(pillarBodyHtml))
+        foreach (var heading in ExtractH2Headings(pillarBodyMarkdown))
         {
             targets.Add(new ImagePromptSectionTarget("pillar", heading, order++));
         }
 
         order = 1;
-        foreach (var heading in ExtractH2Headings(blogBodyHtml))
+        foreach (var heading in ExtractH2Headings(blogBodyMarkdown))
         {
             targets.Add(new ImagePromptSectionTarget("blog", heading, order++));
         }
@@ -111,8 +94,28 @@ public static class ArticleHtmlSectionExtractor
         return targets;
     }
 
-    private static string StripTags(string html) =>
-        Regex.Replace(html, "<[^>]+>", " ").Trim();
+    /// <summary>All ATX headings at the given level, in document order, with their source span and text.</summary>
+    internal static IReadOnlyList<(string Text, Markdig.Syntax.SourceSpan Span)> TopLevelHeadings(string markdown, int level)
+    {
+        var document = Markdig.Markdown.Parse(markdown, Pipeline);
+        var result = new List<(string, Markdig.Syntax.SourceSpan)>();
+
+        foreach (var block in document)
+        {
+            if (block is HeadingBlock heading && heading.Level == level)
+            {
+                result.Add((HeadingText(markdown, heading), heading.Span));
+            }
+        }
+
+        return result;
+    }
+
+    internal static string HeadingText(string markdown, HeadingBlock heading)
+    {
+        var raw = markdown[heading.Span.Start..(heading.Span.End + 1)];
+        return raw.TrimStart('#').Trim();
+    }
 }
 
 public sealed record ImagePromptSectionTarget(string SourceType, string Heading, int Order);

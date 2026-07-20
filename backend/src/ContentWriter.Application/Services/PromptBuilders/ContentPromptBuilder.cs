@@ -147,11 +147,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine("Write ONE section of a schema.org TechnicalArticle pillar — third person, expert, implementation-focused.")
             .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
-            .AppendLine("Output ONLY HTML for this section. No Markdown. No JSON. No <html>/<body> tags.")
+            .AppendLine("Output ONLY GitHub-Flavored Markdown for this section. No JSON. No code fences wrapping the output.")
             .AppendLine(isFirst
-                ? "Start with 2-3 introductory <p> paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then <h2> for this section."
-                : "Start with <h2> for this section only — no intro paragraphs.")
-            .AppendLine("Include 2-3 <h3> subsections with multiple <p> paragraphs and at least one <ul> where appropriate.")
+                ? "Start with 2-3 introductory paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then \"## \" for this section."
+                : "Start with \"## \" for this section only — no intro paragraphs.")
+            .AppendLine("Include 2-3 \"### \" subsections with multiple paragraphs and at least one \"- \" bullet list where appropriate.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
@@ -194,8 +194,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine("Write ONLY the \"People Also Ask\" FAQ section of a TechnicalArticle pillar.")
-            .AppendLine("Start with <h2>People Also Ask</h2>. Each question is an <h3> followed by a 2-4 sentence answer <p>.")
-            .AppendLine("Direct, factual answers. Third person. No Markdown. No JSON.")
+            .AppendLine("Start with \"## People Also Ask\". Each question is a \"### \" heading followed by a 2-4 sentence answer paragraph.")
+            .AppendLine("Direct, factual answers. Third person. GitHub-Flavored Markdown only. No JSON.")
             .ToString();
 
         if (isRegeneration)
@@ -243,12 +243,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write an authoritative pillar article. Tone: third person, expert, implementation-focused.")
             .AppendLine("ANTI-PATTERNS (do NOT do these): first/second person blog voice; short 2-sentence sections; question-mark H2s outside the FAQ section; turning the whole article into Q&A.")
             .AppendLine("REQUIRED STRUCTURE:")
-            .AppendLine("  1. Opening: 2-3 <p> paragraphs before the first H2 (context, problem, thesis).")
-            .AppendLine("  2. Main H2 sections (from outline, excluding FAQ): each with multiple <h3> subsections, 3+ paragraphs, and at least one <ul> where appropriate.")
-            .AppendLine("  3. Final H2 \"People Also Ask\" only: each FAQ as <h3> + 2-4 sentence answer <p>. FAQ must NOT appear earlier in the article.")
+            .AppendLine("  1. Opening: 2-3 paragraphs before the first \"## \" heading (context, problem, thesis).")
+            .AppendLine("  2. Main \"## \" sections (from outline, excluding FAQ): each with multiple \"### \" subsections, 3+ paragraphs, and at least one \"- \" bullet list where appropriate.")
+            .AppendLine("  3. Final \"## People Also Ask\" only: each FAQ as a \"### \" heading + 2-4 sentence answer paragraph. FAQ must NOT appear earlier in the article.")
             .AppendLine("Ground factual claims in AUTHORITATIVE SOURCES — paraphrase and attribute where appropriate.")
             .AppendLine($"Target at least {ContentLengthTargets.PillarMinWords:N0} words (aim for {ContentLengthTargets.PillarTargetMinWords:N0}-{ContentLengthTargets.PillarTargetMaxWords:N0}). Do not stop early.")
-            .AppendLine("Respond with ONLY semantic HTML using <h2>/<h3>/<p>/<ul>/<li> tags. No Markdown. No JSON wrapper.")
+            .AppendLine("Respond with ONLY GitHub-Flavored Markdown. No JSON wrapper. No code fences wrapping the output.")
             .ToString();
 
         if (isRegeneration)
@@ -325,11 +325,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Detected brand tone: {context.DetectedTone}.")
             .AppendLine("Write ONE section of a schema.org BlogPosting deep-dive article — conversational but substantive; first/second person allowed.")
             .AppendLine($"Editorial standard ({ContentLengthTargets.BlogRangeLabel} words): {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Output ONLY HTML for this section. No Markdown. No JSON. No <html>/<body> tags.")
+            .AppendLine("Output ONLY GitHub-Flavored Markdown for this section. No JSON. No code fences wrapping the output.")
             .AppendLine(isFirst
-                ? "Start with 2-3 introductory <p> paragraphs (hook, stakes, and who this is for). Then <h2> for this section."
-                : "Start with <h2> for this section only — no intro paragraphs.")
-            .AppendLine("Include 2-3 <h3> subsections where helpful, multiple substantive <p> paragraphs, at least one <ul> with concrete tips, and a specific example or data point.")
+                ? "Start with 2-3 introductory paragraphs (hook, stakes, and who this is for). Then \"## \" for this section."
+                : "Start with \"## \" for this section only — no intro paragraphs.")
+            .AppendLine("Include 2-3 \"### \" subsections where helpful, multiple substantive paragraphs, at least one \"- \" bullet list with concrete tips, and a specific example or data point.")
             .AppendLine($"Target {ContentLengthTargets.BlogSectionMinWords}-{ContentLengthTargets.BlogSectionTargetMaxWords} words for this section alone. Shorter sections fail editorial review — add depth, not filler.")
             .AppendLine("Do NOT duplicate the pillar article structure or reuse its H2 headings verbatim.")
             .ToString();
@@ -366,11 +366,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var wordsNeeded = ContentLengthTargets.BlogMinWords - currentWordCount;
         var system = new StringBuilder()
             .AppendLine("You are a senior content editor for an IT consulting firm.")
-            .AppendLine("Expand the blog HTML below to meet the minimum word count without changing the title or removing existing sections.")
+            .AppendLine("Expand the blog Markdown below to meet the minimum word count without changing the title or removing existing sections.")
             .AppendLine($"Editorial standard: {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Add depth inside each <h2> section: more <p> paragraphs, an extra <h3> subsection, examples, and a bullet list where appropriate.")
+            .AppendLine("Add depth inside each \"## \" section: more paragraphs, an extra \"### \" subsection, examples, and a bullet list where appropriate.")
             .AppendLine($"Current length: {currentWordCount:N0} words. Minimum required: {ContentLengthTargets.BlogMinWords:N0}. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
-            .AppendLine("Respond with ONLY the full expanded HTML body. No Markdown. No JSON wrapper.")
+            .AppendLine("Respond with ONLY the full expanded Markdown body. No JSON wrapper. No code fences wrapping the output.")
             .ToString();
 
         var user = new StringBuilder()
@@ -378,7 +378,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Blog title: {metadata.Title}")
             .AppendLine($"Pillar reference: {sourceArticle.Title}")
             .AppendLine()
-            .AppendLine("Current HTML to expand:")
+            .AppendLine("Current Markdown to expand:")
             .AppendLine(currentBodyHtml)
             .ToString();
 
@@ -398,9 +398,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine($"Detected brand tone: {context.DetectedTone}.")
             .AppendLine("Write a deep-dive blog that teases the pillar — do NOT duplicate the pillar structure or reuse its H2 headings verbatim.")
-            .AppendLine("Use fresh H2 headings (5-6 sections). Substantive paragraphs with examples; first/second person allowed.")
+            .AppendLine("Use fresh \"## \" headings (5-6 sections). Substantive paragraphs with examples; first/second person allowed.")
             .AppendLine($"Target at least {ContentLengthTargets.BlogMinWords:N0} words (aim for {ContentLengthTargets.BlogRangeLabel}). Do not stop early.")
-            .AppendLine("Respond with ONLY semantic HTML using <h2>/<h3>/<p>/<ul>/<li>. No Markdown. No JSON wrapper.")
+            .AppendLine("Respond with ONLY GitHub-Flavored Markdown. No JSON wrapper. No code fences wrapping the output.")
             .ToString();
 
         var user = new StringBuilder()
@@ -552,11 +552,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var system = new StringBuilder()
             .AppendLine("You are a senior technical writer for an IT consulting firm.")
             .AppendLine($"Editorial standard: {ContentLengthTargets.ToolEditorialDefinition}")
-            .AppendLine("Write a tool overview page as HTML only (no markdown, no JSON wrapper).")
+            .AppendLine("Write a tool overview page as GitHub-Flavored Markdown only (no JSON wrapper, no code fences wrapping the output).")
             .AppendLine("This page is published with schema.org SoftwareApplication metadata — expert technical tone, not breaking news.")
-            .AppendLine("Use <h2> for main sections and <h3> for subsections with multiple <p> paragraphs.")
-            .AppendLine("Start at the first <h2> — no introductory paragraphs before it.")
-            .AppendLine("Required <h2> sections: Overview, Key Capabilities, Implementation Considerations, When to Use.")
+            .AppendLine("Use \"## \" for main sections and \"### \" for subsections with multiple paragraphs.")
+            .AppendLine("Start at the first \"## \" heading — no introductory paragraphs before it.")
+            .AppendLine("Required \"## \" sections: Overview, Key Capabilities, Implementation Considerations, When to Use.")
             .AppendLine($"Target at least {ContentLengthTargets.ToolMinWords:N0} words (aim for {ContentLengthTargets.ToolTargetMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0}). Hard maximum {ContentLengthTargets.ToolHardMaxWords:N0}. Do not stop early.")
             .ToString();
 
@@ -643,9 +643,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var wordsNeeded = ContentLengthTargets.ToolMinWords - currentWordCount;
         var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Expand the tool page HTML to meet the minimum word count.")
-            .AppendLine("Return ONLY the full revised HTML body — no markdown, no JSON.")
-            .AppendLine("Preserve all existing <h2> section headings and structure; add substantive depth under each section.")
+            .AppendLine("You are a senior technical writer. Expand the tool page Markdown to meet the minimum word count.")
+            .AppendLine("Return ONLY the full revised Markdown body — no JSON, no code fences wrapping the output.")
+            .AppendLine("Preserve all existing \"## \" section headings and structure; add substantive depth under each section.")
             .AppendLine($"Minimum required: {ContentLengthTargets.ToolMinWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .ToString();
 
@@ -654,7 +654,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Current length: {currentWordCount:N0} words. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
             .AppendLine()
-            .AppendLine("Current HTML:")
+            .AppendLine("Current Markdown:")
             .AppendLine(currentBodyHtml)
             .ToString();
 
@@ -671,9 +671,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
         int currentWordCount)
     {
         var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Trim the tool page HTML to meet the maximum word count.")
-            .AppendLine("Return ONLY the full revised HTML body — no markdown, no JSON.")
-            .AppendLine("Preserve all existing <h2> section headings; tighten prose without losing key facts.")
+            .AppendLine("You are a senior technical writer. Trim the tool page Markdown to meet the maximum word count.")
+            .AppendLine("Return ONLY the full revised Markdown body — no JSON, no code fences wrapping the output.")
+            .AppendLine("Preserve all existing \"## \" section headings; tighten prose without losing key facts.")
             .AppendLine($"Target range: {ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .ToString();
 
@@ -682,7 +682,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Current length: {currentWordCount:N0} words — trim to at most {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .AppendLine()
-            .AppendLine("Current HTML:")
+            .AppendLine("Current Markdown:")
             .AppendLine(currentBodyHtml)
             .ToString();
 
@@ -708,14 +708,14 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("TOOLS SECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
             .AppendLine("Cover 4-6 major platforms or tools relevant to the target keyword (only well-known products; do not invent feature names).")
-            .AppendLine("For EACH platform use this HTML pattern:")
-            .AppendLine("  <h3>{Platform name}</h3>")
-            .AppendLine("  <p>Brief overview of what the platform does for this use case.</p>")
-            .AppendLine("  <ul><li>2-4 factual capability bullets</li></ul>")
-            .AppendLine("  <h4>How an AI implementer helps with {Platform}</h4>")
-            .AppendLine("  <p>Yes — an AI implementer can facilitate {Platform} deployments. State which client problems are solved ")
+            .AppendLine("For EACH platform use this Markdown pattern (heading levels matter — do not deviate):")
+            .AppendLine("  ### {Platform name}")
+            .AppendLine("  Brief overview of what the platform does for this use case.")
+            .AppendLine("  - 2-4 factual capability bullets")
+            .AppendLine("  #### How an AI implementer helps with {Platform}")
+            .AppendLine("  Yes — an AI implementer can facilitate {Platform} deployments. State which client problems are solved ")
             .AppendLine("  (e.g. faster configuration, data models, integrations, Apex/LWC, Agentforce/agents, governance, training). ")
-            .AppendLine("  Tie problems to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation.</p>")
+            .AppendLine("  Tie problems to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation.")
             .AppendLine("Example (Salesforce): AI implementers accelerate Salesforce rollouts via AI-assisted data model design, ")
             .AppendLine("configuration workflows, Apex/LWC development, and autonomous agents such as Agentforce.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")

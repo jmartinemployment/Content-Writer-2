@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   generateBlogContent,
   generateColdOutreachContent,
@@ -385,6 +387,14 @@ function StepRow({
   );
 }
 
+function MarkdownBody({ markdown, className }: { markdown: string; className?: string }) {
+  return (
+    <div className={className}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+    </div>
+  );
+}
+
 function ArticleView({
   title,
   metaDescription,
@@ -461,9 +471,9 @@ function ArticleView({
       )}
 
       {bodyHtml && (
-        <div
+        <MarkdownBody
+          markdown={bodyHtml}
           className="rendered-content mt-5 rounded-lg border border-border bg-background p-4"
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
         />
       )}
 
@@ -584,9 +594,9 @@ function ToolPostCard({ tool }: { tool: ToolPostDraft }) {
         {tool.toolUrl}
       </a>
 
-      <div
+      <MarkdownBody
+        markdown={tool.bodyHtml}
         className="rendered-content mt-4 rounded-lg border border-border bg-surface p-4"
-        dangerouslySetInnerHTML={{ __html: tool.bodyHtml }}
       />
 
       {tool.jsonLdSchema && (
