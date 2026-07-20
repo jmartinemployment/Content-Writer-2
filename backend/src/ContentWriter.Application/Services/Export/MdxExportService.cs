@@ -63,6 +63,7 @@ public class MdxExportService : IMdxExportService
         var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
         var title = string.IsNullOrWhiteSpace(row.DisplayTitle) ? row.Title : row.DisplayTitle!;
         var body = _htmlToMarkdown.Convert(row.BodyHtml ?? string.Empty).Trim();
+        var sections = ArticleHtmlSectionExtractor.Split(row.BodyHtml);
 
         var frontmatter = new StringBuilder()
             .AppendLine("---")
@@ -70,11 +71,45 @@ public class MdxExportService : IMdxExportService
             .Append("description: ").AppendLine(YamlString(row.MetaDescription ?? string.Empty))
             .Append("slug: ").AppendLine(YamlString(slug))
             .Append("date: ").AppendLine(YamlString(row.CreatedAtUtc.ToString("O")))
-            .AppendLine(YamlStringArray("tags", row.Keywords))
-            .AppendLine("---")
-            .ToString();
+            .Append("excerpt: ").AppendLine(YamlString(row.Summary))
+            .Append("mainSummary: ").AppendLine(YamlString(row.MainSummary))
+            .Append("heroSummary: ").AppendLine(YamlString(row.HeroSummary))
+            .Append("homeSummary: ").AppendLine(YamlString(row.HomeSummary))
+            .Append("blogSummary: ").AppendLine(YamlString(row.BlogSummary))
+            .Append("advertisingSummary: ").AppendLine(YamlString(row.AdvertisingSummary))
+            .AppendLine(YamlStringArray("tags", row.Keywords));
+        AppendSectionsYaml(frontmatter, sections);
+        frontmatter.AppendLine("---");
 
         return new MdxDocument($"{slug}.mdx", $"{frontmatter}\n{body}\n");
+    }
+
+    /// <summary>
+    /// Emits H2-bound sections (heading + Markdown body per section) as a YAML array, so a layout
+    /// that composes fragments from specific entries — e.g. "blog[1].sections[0].heading" — can address
+    /// a single section without parsing the full MDX body. Mirrors the split GeekBackend publish uses.
+    /// </summary>
+    private void AppendSectionsYaml(StringBuilder frontmatter, IReadOnlyList<HtmlSection> sections)
+    {
+        if (sections.Count == 0)
+        {
+            frontmatter.AppendLine("sections: []");
+            return;
+        }
+
+        frontmatter.AppendLine("sections:");
+        foreach (var section in sections)
+        {
+            var heading = section.HeadingText ?? string.Empty;
+            var sectionBody = _htmlToMarkdown.Convert(section.BodyContent).Trim();
+
+            frontmatter.Append("  - heading: ").AppendLine(YamlString(heading));
+            frontmatter.AppendLine("    body: |");
+            foreach (var line in sectionBody.Split('\n'))
+            {
+                frontmatter.Append("      ").AppendLine(line.TrimEnd('\r'));
+            }
+        }
     }
 
     private static string YamlString(string value) =>
