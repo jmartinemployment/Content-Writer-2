@@ -51,7 +51,9 @@ public class ContentWriterDbContext : DbContext
         {
             entity.HasKey(t => t.Id);
             entity.Property(t => t.GeekBackendApiBaseUrl).HasMaxLength(2048).IsRequired();
-            entity.Property(t => t.ApiKeyEnvVar).HasMaxLength(256).IsRequired();
+            entity.Property(t => t.OAuthTokenEndpoint).HasMaxLength(512).IsRequired();
+            entity.Property(t => t.ClientIdEnvVar).HasMaxLength(256).IsRequired();
+            entity.Property(t => t.ClientSecretEnvVar).HasMaxLength(256).IsRequired();
             entity.HasIndex(t => t.ClientId).IsUnique();
         });
 

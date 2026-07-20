@@ -39,7 +39,7 @@ public sealed record GeekBlogPostPayload(
 public sealed record GeekBlogPostResult(int PostId, string Slug, string LanguageCode, int SectionCount, bool WasUpdated);
 
 /// <summary>Resolved per-client connection details for a single publish call — never persisted, built fresh from PublishTarget + env var lookup.</summary>
-public sealed record PublishTargetContext(string ApiBaseUrl, string ApiKey, int? DefaultAuthorId);
+public sealed record PublishTargetContext(string ApiBaseUrl, GeekOAuthCredentials OAuth, int? DefaultAuthorId);
 
 /// <summary>HTTP client for GeekBackend's blog API (GeekAPI, `api/blog`). Auth mirrors ImportBlogContent's `X-API-Key` header pattern.</summary>
 public interface IGeekBackendClient
@@ -63,7 +63,6 @@ public interface IGeekBackendClient
 /// </summary>
 public sealed class GeekBackendClient : IGeekBackendClient
 {
-    private const string ApiKeyHeader = "X-API-Key";
     private const string HttpClientName = "GeekBackend";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -73,10 +72,18 @@ public sealed class GeekBackendClient : IGeekBackendClient
     };
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IGeekOAuthTokenProvider _tokenProvider;
 
-    public GeekBackendClient(IHttpClientFactory httpClientFactory)
+    public GeekBackendClient(IHttpClientFactory httpClientFactory, IGeekOAuthTokenProvider tokenProvider)
     {
         _httpClientFactory = httpClientFactory;
+        _tokenProvider = tokenProvider;
+    }
+
+    private async Task AttachAuthAsync(HttpRequestMessage request, PublishTargetContext target, CancellationToken cancellationToken)
+    {
+        var accessToken = await _tokenProvider.GetAccessTokenAsync(target.OAuth, cancellationToken);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
     }
 
     public async Task<int?> FindExistingPostIdAsync(
@@ -87,7 +94,7 @@ public sealed class GeekBackendClient : IGeekBackendClient
     {
         var http = _httpClientFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(target, $"api/blog/{languageCode}/{slug}"));
-        request.Headers.Add(ApiKeyHeader, target.ApiKey);
+        await AttachAuthAsync(request, target, cancellationToken);
 
         var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -112,7 +119,7 @@ public sealed class GeekBackendClient : IGeekBackendClient
         {
             Content = JsonContent.Create(payload, options: JsonOptions),
         };
-        request.Headers.Add(ApiKeyHeader, target.ApiKey);
+        await AttachAuthAsync(request, target, cancellationToken);
 
         var response = await http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -138,7 +145,7 @@ public sealed class GeekBackendClient : IGeekBackendClient
     {
         var http = _httpClientFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(target, $"api/blog/categories?lang={lang}"));
-        request.Headers.Add(ApiKeyHeader, target.ApiKey);
+        await AttachAuthAsync(request, target, cancellationToken);
 
         var response = await http.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();

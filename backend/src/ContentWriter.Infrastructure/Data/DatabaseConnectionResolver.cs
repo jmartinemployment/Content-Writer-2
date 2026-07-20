@@ -5,7 +5,12 @@ namespace ContentWriter.Infrastructure.Data;
 
 public static class DatabaseConnectionResolver
 {
-    public static string Resolve(IConfiguration configuration)
+    public static string Resolve(IConfiguration configuration) =>
+        TryResolve(configuration)
+            ?? throw new InvalidOperationException("Connection string 'ContentWriterDb' is not configured.");
+
+    /// <summary>Same as <see cref="Resolve"/> but returns null instead of throwing when no Postgres connection is configured — the caller falls back to an in-memory store.</summary>
+    public static string? TryResolve(IConfiguration configuration)
     {
         var fromEnv = Environment.GetEnvironmentVariable("CONTENT_WRITER_DATABASE_URL")
             ?? Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -13,8 +18,7 @@ public static class DatabaseConnectionResolver
         if (!string.IsNullOrWhiteSpace(fromEnv))
             return NormalizePostgresUrl(fromEnv);
 
-        return configuration.GetConnectionString("ContentWriterDb")
-            ?? throw new InvalidOperationException("Connection string 'ContentWriterDb' is not configured.");
+        return configuration.GetConnectionString("ContentWriterDb");
     }
 
     /// <summary>Converts Supabase/Railway <c>postgres://</c> URLs to Npgsql key/value format.</summary>

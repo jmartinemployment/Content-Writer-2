@@ -1,5 +1,6 @@
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services;
+using ContentWriter.Application.Services.Export;
 using ContentWriter.Application.Services.JsonLd;
 using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
@@ -19,16 +20,26 @@ public static class ContentWriterServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = DatabaseConnectionResolver.Resolve(configuration);
+        var connectionString = DatabaseConnectionResolver.TryResolve(configuration);
 
-        services.AddSingleton(new ContentWriterDatabaseOptions(connectionString));
+        services.AddSingleton(new ContentWriterDatabaseOptions(connectionString ?? string.Empty));
 
         services.AddDbContext<ContentWriterDbContext>(options =>
         {
-            options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable(
-                    ContentWriterDbContextOptionsExtensions.MigrationsHistoryTableName,
-                    ContentWriterDbContextOptionsExtensions.SchemaName));
+            // No Postgres connection configured yet (e.g. no DATABASE_URL) — run on an in-memory
+            // store so the app works without a hosted DB. Set DATABASE_URL (e.g. to a Supabase
+            // Postgres instance) to switch back to real persistence; no other code changes needed.
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                options.UseInMemoryDatabase("ContentWriter");
+            }
+            else
+            {
+                options.UseNpgsql(connectionString, npgsql =>
+                    npgsql.MigrationsHistoryTable(
+                        ContentWriterDbContextOptionsExtensions.MigrationsHistoryTableName,
+                        ContentWriterDbContextOptionsExtensions.SchemaName));
+            }
         });
 
         services.AddScoped<IProjectRepository, ProjectRepository>();
@@ -63,8 +74,11 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IToolPageGenerator, ToolPageGenerator>();
         services.AddScoped<IContentGenerationOrchestrator, ContentGenerationOrchestrator>();
         services.AddHttpClient("GeekBackend");
+        services.AddSingleton<IGeekOAuthTokenProvider, GeekOAuthTokenProvider>();
         services.AddScoped<IGeekBackendClient, GeekBackendClient>();
+        services.AddScoped<IGeekRepository, GeekRepository>();
         services.AddScoped<IGeekBlogPublishService, GeekBlogPublishService>();
+        services.AddScoped<IMdxExportService, MdxExportService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();
 
         services.AddScoped<IEditorialReviewService, EditorialReviewService>();
@@ -84,7 +98,15 @@ public static class ContentWriterServiceRegistration
         var db = scope.ServiceProvider.GetRequiredService<ContentWriterDbContext>();
         try
         {
-            await db.Database.MigrateAsync(cancellationToken);
+            if (db.Database.IsRelational())
+            {
+                await db.Database.MigrateAsync(cancellationToken);
+            }
+            else
+            {
+                logger.LogWarning("No Postgres connection configured — running on an in-memory store; data will not persist across restarts.");
+            }
+
             logger.LogInformation("Content Writer database ready.");
 
             await SeedDefaultClientAsync(db, logger, cancellationToken);
@@ -115,7 +137,9 @@ public static class ContentWriterServiceRegistration
         {
             ClientId = client.Id,
             GeekBackendApiBaseUrl = "https://api.geekatyourspot.com",
-            ApiKeyEnvVar = "GEEKATYOURSPOT_API_KEY",
+            OAuthTokenEndpoint = "api/oauth/token",
+            ClientIdEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_ID",
+            ClientSecretEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_SECRET",
             CategoryStrategy = CategoryStrategy.DepartmentBased,
         };
 

@@ -5,8 +5,9 @@ namespace ContentWriter.Application.Services.Publish;
 
 /// <summary>
 /// Resolves a <see cref="Client"/>'s <see cref="PublishTarget"/> into connection details for a
-/// GeekBackend call. The API key is never stored — <see cref="PublishTarget.ApiKeyEnvVar"/> names
-/// the Railway environment variable holding it, read fresh on every call.
+/// GeekBackend call. The OAuth2 client secret is never stored — <see cref="PublishTarget.ClientIdEnvVar"/>
+/// and <see cref="PublishTarget.ClientSecretEnvVar"/> name Railway environment variables holding the
+/// client-credentials, read fresh on every call.
 /// </summary>
 public static class PublishTargetResolver
 {
@@ -23,14 +24,28 @@ public static class PublishTargetResolver
                 "geek_blog.posts.author_id is required — set it to a seeded geek_blog.users.id before publishing.");
         }
 
-        var apiKey = Environment.GetEnvironmentVariable(publishTarget.ApiKeyEnvVar);
-        if (string.IsNullOrWhiteSpace(apiKey))
+        var oauthClientId = Environment.GetEnvironmentVariable(publishTarget.ClientIdEnvVar);
+        if (string.IsNullOrWhiteSpace(oauthClientId))
         {
             throw new ContentGenerationException(
-                $"Environment variable '{publishTarget.ApiKeyEnvVar}' (PublishTarget.ApiKeyEnvVar for client " +
-                $"'{client.Name}') is not set — cannot call GeekBackend without an API key.");
+                $"Environment variable '{publishTarget.ClientIdEnvVar}' (PublishTarget.ClientIdEnvVar for client " +
+                $"'{client.Name}') is not set — cannot authenticate to GeekBackend without an OAuth client id.");
         }
 
-        return new PublishTargetContext(publishTarget.GeekBackendApiBaseUrl, apiKey, publishTarget.DefaultAuthorId);
+        var oauthClientSecret = Environment.GetEnvironmentVariable(publishTarget.ClientSecretEnvVar);
+        if (string.IsNullOrWhiteSpace(oauthClientSecret))
+        {
+            throw new ContentGenerationException(
+                $"Environment variable '{publishTarget.ClientSecretEnvVar}' (PublishTarget.ClientSecretEnvVar for client " +
+                $"'{client.Name}') is not set — cannot authenticate to GeekBackend without an OAuth client secret.");
+        }
+
+        var tokenEndpoint = BuildAbsoluteUri(publishTarget.GeekBackendApiBaseUrl, publishTarget.OAuthTokenEndpoint);
+        var oauth = new GeekOAuthCredentials(tokenEndpoint, oauthClientId, oauthClientSecret);
+
+        return new PublishTargetContext(publishTarget.GeekBackendApiBaseUrl, oauth, publishTarget.DefaultAuthorId);
     }
+
+    private static string BuildAbsoluteUri(string baseUrl, string relativePath) =>
+        new Uri(baseUrl.TrimEnd('/') + "/" + relativePath.TrimStart('/')).ToString();
 }

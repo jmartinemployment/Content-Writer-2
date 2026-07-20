@@ -56,9 +56,12 @@ public class ClientsController : ControllerBase
             return NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(request.GeekBackendApiBaseUrl) || string.IsNullOrWhiteSpace(request.ApiKeyEnvVar))
+        if (string.IsNullOrWhiteSpace(request.GeekBackendApiBaseUrl)
+            || string.IsNullOrWhiteSpace(request.OAuthTokenEndpoint)
+            || string.IsNullOrWhiteSpace(request.ClientIdEnvVar)
+            || string.IsNullOrWhiteSpace(request.ClientSecretEnvVar))
         {
-            return BadRequest("GeekBackendApiBaseUrl and ApiKeyEnvVar are required.");
+            return BadRequest("GeekBackendApiBaseUrl, OAuthTokenEndpoint, ClientIdEnvVar, and ClientSecretEnvVar are required.");
         }
 
         if (client.PublishTarget is null)
@@ -68,7 +71,9 @@ public class ClientsController : ControllerBase
         }
 
         client.PublishTarget.GeekBackendApiBaseUrl = request.GeekBackendApiBaseUrl;
-        client.PublishTarget.ApiKeyEnvVar = request.ApiKeyEnvVar;
+        client.PublishTarget.OAuthTokenEndpoint = request.OAuthTokenEndpoint;
+        client.PublishTarget.ClientIdEnvVar = request.ClientIdEnvVar;
+        client.PublishTarget.ClientSecretEnvVar = request.ClientSecretEnvVar;
         client.PublishTarget.DefaultAuthorId = request.DefaultAuthorId;
         client.PublishTarget.CategoryStrategy = request.CategoryStrategy;
 
@@ -83,6 +88,7 @@ public class ClientsController : ControllerBase
             ? null
             : new PublishTargetResponse(
                 client.PublishTarget.Id, client.PublishTarget.GeekBackendApiBaseUrl,
-                client.PublishTarget.ApiKeyEnvVar, client.PublishTarget.DefaultAuthorId,
+                client.PublishTarget.OAuthTokenEndpoint, client.PublishTarget.ClientIdEnvVar,
+                client.PublishTarget.ClientSecretEnvVar, client.PublishTarget.DefaultAuthorId,
                 client.PublishTarget.CategoryStrategy));
 }

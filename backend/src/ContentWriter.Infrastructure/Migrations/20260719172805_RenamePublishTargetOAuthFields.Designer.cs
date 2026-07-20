@@ -3,6 +3,7 @@ using System;
 using ContentWriter.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ContentWriter.Infrastructure.Migrations
 {
     [DbContext(typeof(ContentWriterDbContext))]
-    partial class ContentWriterDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260719172805_RenamePublishTargetOAuthFields")]
+    partial class RenamePublishTargetOAuthFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -368,36 +371,6 @@ namespace ContentWriter.Infrastructure.Migrations
                     b.ToTable("ReviewVerdicts", "content_writer_v2");
                 });
 
-            modelBuilder.Entity("ContentWriter.Domain.Entities.WebPost", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Slug")
-                        .IsUnique();
-
-                    b.ToTable("web_posts", "public");
-                });
-
             modelBuilder.Entity("ContentWriter.Domain.Entities.CrawledSite", b =>
                 {
                     b.HasOne("ContentWriter.Domain.Entities.Project", "Project")
@@ -462,58 +435,6 @@ namespace ContentWriter.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("GeneratedContent");
-                });
-
-            modelBuilder.Entity("ContentWriter.Domain.Entities.WebPost", b =>
-                {
-                    b.OwnsOne("ContentWriter.Domain.Entities.ContentStructure", "ContentStructure", b1 =>
-                        {
-                            b1.Property<Guid>("WebPostId");
-
-                            b1.Property<string>("MainBody");
-
-                            b1.HasKey("WebPostId");
-
-                            b1.ToTable("web_posts", "public");
-
-                            b1
-                                .ToJson("content_structure")
-                                .HasColumnType("jsonb");
-
-                            b1.WithOwner()
-                                .HasForeignKey("WebPostId");
-
-                            b1.OwnsMany("ContentWriter.Domain.Entities.ContentSection", "Sections", b2 =>
-                                {
-                                    b2.Property<Guid>("ContentStructureWebPostId");
-
-                                    b2.Property<int>("__synthesizedOrdinal")
-                                        .ValueGeneratedOnAdd();
-
-                                    b2.Property<string>("BodyContent")
-                                        .IsRequired();
-
-                                    b2.Property<string>("HeadingText");
-
-                                    b2.Property<string>("MediaAlt");
-
-                                    b2.Property<string>("MediaUrl");
-
-                                    b2.Property<int>("SortOrder");
-
-                                    b2.HasKey("ContentStructureWebPostId", "__synthesizedOrdinal");
-
-                                    b2.ToTable("web_posts", "public");
-
-                                    b2.WithOwner()
-                                        .HasForeignKey("ContentStructureWebPostId");
-                                });
-
-                            b1.Navigation("Sections");
-                        });
-
-                    b.Navigation("ContentStructure")
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ContentWriter.Domain.Entities.Client", b =>
