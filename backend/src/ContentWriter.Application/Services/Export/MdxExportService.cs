@@ -34,7 +34,10 @@ public class MdxExportService : IMdxExportService
                 or GeneratedContentType.ToolPost
                 or GeneratedContentType.SocialFacebook
                 or GeneratedContentType.SocialLinkedIn
-                or GeneratedContentType.EmailColdOutreach)
+                or GeneratedContentType.EmailColdOutreach
+                or GeneratedContentType.ImagePromptPillarFigure
+                or GeneratedContentType.ImagePromptBlogFigure
+                or GeneratedContentType.ImagePromptSection)
             .Where(r => IsApproved(r, includeRevise))
             .OrderBy(c => c.ContentType)
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
@@ -88,6 +91,9 @@ public class MdxExportService : IMdxExportService
         GeneratedContentType.SocialFacebook => "social/facebook",
         GeneratedContentType.SocialLinkedIn => "social/linkedin",
         GeneratedContentType.EmailColdOutreach => "email",
+        GeneratedContentType.ImagePromptPillarFigure => "image-prompts/pillar",
+        GeneratedContentType.ImagePromptBlogFigure => "image-prompts/blog",
+        GeneratedContentType.ImagePromptSection => "image-prompts/sections",
         _ => "misc",
     };
 
