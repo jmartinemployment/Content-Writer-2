@@ -8,7 +8,7 @@ namespace ContentWriter.Application.Services.Export;
 
 public interface IMdxExportService
 {
-    Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Renders approved generated content (article, blog, tool posts) as .mdx files: YAML frontmatter over the native Markdown body.</summary>
@@ -21,7 +21,7 @@ public class MdxExportService : IMdxExportService
         _projectRepository = projectRepository;
     }
 
-    public async Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
         var project = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
@@ -38,6 +38,7 @@ public class MdxExportService : IMdxExportService
                 or GeneratedContentType.ImagePromptPillarFigure
                 or GeneratedContentType.ImagePromptBlogFigure
                 or GeneratedContentType.ImagePromptSection)
+            .Where(r => IsApproved(r, includeRevise))
             .OrderBy(c => c.ContentType)
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
         {
@@ -146,4 +147,12 @@ public class MdxExportService : IMdxExportService
         return $"{key}: [{string.Join(", ", values.Select(YamlString))}]";
     }
 
+    private static bool IsApproved(GeneratedContent row, bool includeRevise)
+    {
+        var latest = row.ReviewVerdicts.OrderByDescending(v => v.CreatedAtUtc).FirstOrDefault();
+        if (latest is null)
+            return true;
+
+        return latest.Status == ReviewVerdictStatus.Approved || (includeRevise && latest.Status != ReviewVerdictStatus.Approved);
+    }
 }

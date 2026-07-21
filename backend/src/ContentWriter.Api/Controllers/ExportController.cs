@@ -24,12 +24,12 @@ public class ExportController : ControllerBase
     }
 
     [HttpGet("export/mdx")]
-    public async Task<IActionResult> ExportMdx(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ExportMdx(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<MdxDocument> documents;
         try
         {
-            documents = await _mdxExportService.ExportAsync(projectId, cancellationToken);
+            documents = await _mdxExportService.ExportAsync(projectId, includeRevise, cancellationToken);
         }
         catch (ContentGenerationException ex)
         {
@@ -54,11 +54,11 @@ public class ExportController : ControllerBase
     }
 
     [HttpPost("export/mdx/commit")]
-    public async Task<IActionResult> CommitMdxExport(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> CommitMdxExport(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await _commitService.CommitExportAsync(projectId, cancellationToken);
+            var result = await _commitService.CommitExportAsync(projectId, includeRevise, cancellationToken);
             return Ok(new CommitMdxExportResponse(result.CommitSha, result.CommitUrl, result.FilePaths));
         }
         catch (ContentGenerationException ex)
