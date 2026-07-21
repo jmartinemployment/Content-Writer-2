@@ -1,7 +1,7 @@
 using ContentWriter.Api.Contracts;
 using ContentWriter.Application.Services;
 using ContentWriter.Domain.Entities;
-using ContentWriter.Infrastructure.Repositories;
+using ContentWriter.Infrastructure.InMemory;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -11,12 +11,12 @@ namespace ContentWriter.Api.Controllers;
 [Route("api/projects")]
 public class ProjectsController : ControllerBase
 {
-    private readonly IProjectRepository _projectRepository;
+    private readonly IProjectStore _projectStore;
     private readonly CompanyProfileOptions _companyProfile;
 
-    public ProjectsController(IProjectRepository projectRepository, IOptions<CompanyProfileOptions> companyProfile)
+    public ProjectsController(IProjectStore projectStore, IOptions<CompanyProfileOptions> companyProfile)
     {
-        _projectRepository = projectRepository;
+        _projectStore = projectStore;
         _companyProfile = companyProfile.Value;
     }
 
@@ -38,7 +38,7 @@ public class ProjectsController : ControllerBase
             return BadRequest($"Department must be one of: {string.Join(", ", Departments.Slugs)}.");
         }
 
-        var existing = (await _projectRepository.ListAsync(
+        var existing = (await _projectStore.ListAsync(
             p => p.TargetKeyword == request.TargetKeyword && p.ProjectUrl == request.ProjectUrl,
             cancellationToken)).FirstOrDefault();
         if (existing is not null)
@@ -56,8 +56,7 @@ public class ProjectsController : ControllerBase
             PreferredProvider = request.PreferredProvider
         };
 
-        await _projectRepository.AddAsync(project, cancellationToken);
-        await _projectRepository.SaveChangesAsync(cancellationToken);
+        await _projectStore.AddAsync(project, cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = project.Id }, ToSummary(project));
     }
@@ -67,15 +66,15 @@ public class ProjectsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<ProjectSummaryResponse>>> GetRecent(CancellationToken cancellationToken)
     {
-        await _projectRepository.PurgeStaleAsync(StaleProjectMaxAge, cancellationToken);
-        var projects = await _projectRepository.GetRecentAsync(cancellationToken: cancellationToken);
+        await _projectStore.PurgeStaleAsync(StaleProjectMaxAge, cancellationToken);
+        var projects = await _projectStore.GetRecentAsync(cancellationToken: cancellationToken);
         return Ok(projects.Select(ToSummary).ToList());
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ProjectDetailResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var project = await _projectRepository.GetWithDetailsAsync(id, cancellationToken);
+        var project = await _projectStore.GetAsync(id, cancellationToken);
         if (project is null)
         {
             return NotFound();

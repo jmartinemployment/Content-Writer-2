@@ -2,15 +2,12 @@ using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services;
 using ContentWriter.Application.Services.Export;
 using ContentWriter.Application.Services.JsonLd;
-using ContentWriter.Application.Services.Publish;
 using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.Review;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
-using ContentWriter.Infrastructure.Data;
-using ContentWriter.Infrastructure.Repositories;
-using Microsoft.EntityFrameworkCore;
+using ContentWriter.Infrastructure.InMemory;
 
 namespace ContentWriter.Api.Hosting;
 
@@ -20,29 +17,11 @@ public static class ContentWriterServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = DatabaseConnectionResolver.TryResolve(configuration);
-
-        services.AddSingleton(new ContentWriterDatabaseOptions(connectionString ?? string.Empty));
-
-        services.AddDbContext<ContentWriterDbContext>(options =>
-        {
-            // No Postgres connection configured yet (e.g. no DATABASE_URL) — run on an in-memory
-            // store so the app works without a hosted DB. Set DATABASE_URL (e.g. to a Supabase
-            // Postgres instance) to switch back to real persistence; no other code changes needed.
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                options.UseInMemoryDatabase("ContentWriter");
-            }
-            else
-            {
-                options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable(
-                        ContentWriterDbContextOptionsExtensions.MigrationsHistoryTableName,
-                        ContentWriterDbContextOptionsExtensions.SchemaName));
-            }
-        });
-
-        services.AddScoped<IProjectRepository, ProjectRepository>();
+        // No database. content-writer-v2 holds Project/Client state in memory for the process
+        // lifetime and durably saves output only by committing .mdx to the geekatyourspot GitHub
+        // repo (GeekatyourspotCommitService). State is gone on restart — that's expected.
+        services.AddSingleton<IProjectStore, ProjectStore>();
+        services.AddSingleton<IClientStore, ClientStore>();
 
         services.Configure<LlmProvidersOptions>(configuration.GetSection(LlmProvidersOptions.SectionName));
         services.Configure<CompanyProfileOptions>(configuration.GetSection(CompanyProfileOptions.SectionName));
@@ -77,8 +56,6 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IBlogPostingSchemaBuilder, BlogPostingSchemaBuilder>();
         services.AddScoped<IToolPageGenerator, ToolPageGenerator>();
         services.AddScoped<IContentGenerationOrchestrator, ContentGenerationOrchestrator>();
-        services.AddHttpClient("GeekBackend");
-        services.AddScoped<IGeekRepository, GeekRepository>();
         services.AddScoped<IMdxExportService, MdxExportService>();
         services.AddHttpClient("GitHub");
         services.AddScoped<IGeekatyourspotCommitService, GeekatyourspotCommitService>();
@@ -90,49 +67,19 @@ public static class ContentWriterServiceRegistration
         return services;
     }
 
-    public static async Task InitializeContentWriterDatabaseAsync(
+    /// <summary>Idempotent: seeds the "Geek At Your Spot" client into the in-memory store on first run only.</summary>
+    public static async Task SeedContentWriterDefaultsAsync(
         this WebApplication app,
         CancellationToken cancellationToken = default)
     {
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ContentWriter.Startup");
-        logger.LogInformation("PostgreSQL schema: {Schema}", ContentWriterDbContextOptionsExtensions.SchemaName);
 
         await using var scope = app.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ContentWriterDbContext>();
-        try
-        {
-            if (db.Database.IsRelational())
-            {
-                await db.Database.MigrateAsync(cancellationToken);
-            }
-            else
-            {
-                logger.LogWarning("No Postgres connection configured — running on an in-memory store; data will not persist across restarts.");
-            }
+        var clientStore = scope.ServiceProvider.GetRequiredService<IClientStore>();
 
-            logger.LogInformation("Content Writer database ready.");
-
-            await SeedDefaultClientAsync(db, logger, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Content Writer database initialization failed.");
-            if (!app.Environment.IsDevelopment())
-                throw;
-        }
-    }
-
-    /// <summary>
-    /// Idempotent: seeds the "Geek At Your Spot" client wired to the existing GeekBackend on first
-    /// run only, so v2 testing mirrors v1 behavior. DefaultAuthorId is left unset — publish fails
-    /// with a clear error until an operator sets it via PUT /api/clients/{id}/publish-target.
-    /// </summary>
-    private static async Task SeedDefaultClientAsync(
-        ContentWriterDbContext db, ILogger logger, CancellationToken cancellationToken)
-    {
         const string DefaultClientName = "Geek At Your Spot";
 
-        if (await db.Clients.AnyAsync(cancellationToken))
+        if (await clientStore.AnyAsync(cancellationToken))
             return;
 
         var client = new Client { Name = DefaultClientName };
@@ -146,10 +93,7 @@ public static class ContentWriterServiceRegistration
             CategoryStrategy = CategoryStrategy.DepartmentBased,
         };
 
-        db.Clients.Add(client);
-        await db.SaveChangesAsync(cancellationToken);
+        await clientStore.AddAsync(client, cancellationToken);
         logger.LogInformation("Seeded default client '{ClientName}' ({ClientId}).", DefaultClientName, client.Id);
     }
 }
-
-internal sealed record ContentWriterDatabaseOptions(string ConnectionString);

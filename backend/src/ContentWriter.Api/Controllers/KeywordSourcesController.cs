@@ -2,7 +2,7 @@ using ContentWriter.Api.Contracts;
 using ContentWriter.Application.Services;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
-using ContentWriter.Infrastructure.Repositories;
+using ContentWriter.Infrastructure.InMemory;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContentWriter.Api.Controllers;
@@ -13,12 +13,12 @@ public class KeywordSourcesController : ControllerBase
 {
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB per manually-scraped HTML/text file
 
-    private readonly IProjectRepository _projectRepository;
+    private readonly IProjectStore _projectStore;
     private readonly IKeywordHtmlParserService _parserService;
 
-    public KeywordSourcesController(IProjectRepository projectRepository, IKeywordHtmlParserService parserService)
+    public KeywordSourcesController(IProjectStore projectStore, IKeywordHtmlParserService parserService)
     {
-        _projectRepository = projectRepository;
+        _projectStore = projectStore;
         _parserService = parserService;
     }
 
@@ -31,7 +31,7 @@ public class KeywordSourcesController : ControllerBase
     public async Task<ActionResult<KeywordSourceResponse>> Upload(
         Guid projectId, [FromForm] KeywordSourceCategory category, IFormFile file, CancellationToken cancellationToken)
     {
-        var project = await _projectRepository.GetByIdAsync(projectId, cancellationToken);
+        var project = await _projectStore.GetAsync(projectId, cancellationToken);
         if (project is null)
         {
             return NotFound($"Project {projectId} was not found.");
@@ -67,8 +67,7 @@ public class KeywordSourcesController : ControllerBase
             ExtractedQuestions = parsed.Questions
         };
 
-        await _projectRepository.AddKeywordSourceAsync(entity, cancellationToken);
-        await _projectRepository.SaveChangesAsync(cancellationToken);
+        project.KeywordSources.Add(entity);
 
         return Ok(new KeywordSourceResponse(
             entity.Id, entity.Category, entity.OriginalFileName, entity.ExtractedTitle,
@@ -78,15 +77,14 @@ public class KeywordSourcesController : ControllerBase
     [HttpDelete("{keywordSourceId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid keywordSourceId, CancellationToken cancellationToken)
     {
-        var sources = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken);
-        var target = sources?.KeywordSources.FirstOrDefault(k => k.Id == keywordSourceId);
-        if (target is null)
+        var project = await _projectStore.GetAsync(projectId, cancellationToken);
+        var target = project?.KeywordSources.FirstOrDefault(k => k.Id == keywordSourceId);
+        if (project is null || target is null)
         {
             return NotFound();
         }
 
-        _projectRepository.RemoveKeywordSource(target);
-        await _projectRepository.SaveChangesAsync(cancellationToken);
+        project.KeywordSources.Remove(target);
         return NoContent();
     }
 }

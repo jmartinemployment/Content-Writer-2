@@ -1,8 +1,7 @@
 using ContentWriter.Api.Contracts;
 using ContentWriter.Domain.Entities;
-using ContentWriter.Infrastructure.Data;
+using ContentWriter.Infrastructure.InMemory;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ContentWriter.Api.Controllers;
 
@@ -10,21 +9,17 @@ namespace ContentWriter.Api.Controllers;
 [Route("api/clients")]
 public class ClientsController : ControllerBase
 {
-    private readonly ContentWriterDbContext _db;
+    private readonly IClientStore _clientStore;
 
-    public ClientsController(ContentWriterDbContext db)
+    public ClientsController(IClientStore clientStore)
     {
-        _db = db;
+        _clientStore = clientStore;
     }
 
     [HttpGet]
     public async Task<ActionResult<List<ClientResponse>>> GetAll(CancellationToken cancellationToken)
     {
-        var clients = await _db.Clients
-            .Include(c => c.PublishTarget)
-            .OrderBy(c => c.Name)
-            .ToListAsync(cancellationToken);
-
+        var clients = await _clientStore.ListAsync(cancellationToken);
         return Ok(clients.Select(ToResponse).ToList());
     }
 
@@ -37,8 +32,7 @@ public class ClientsController : ControllerBase
         }
 
         var client = new Client { Name = request.Name, Notes = request.Notes };
-        _db.Clients.Add(client);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _clientStore.AddAsync(client, cancellationToken);
 
         return CreatedAtAction(nameof(GetAll), new { }, ToResponse(client));
     }
@@ -47,10 +41,7 @@ public class ClientsController : ControllerBase
     public async Task<ActionResult<ClientResponse>> UpsertPublishTarget(
         Guid clientId, [FromBody] CreatePublishTargetRequest request, CancellationToken cancellationToken)
     {
-        var client = await _db.Clients
-            .Include(c => c.PublishTarget)
-            .FirstOrDefaultAsync(c => c.Id == clientId, cancellationToken);
-
+        var client = await _clientStore.GetAsync(clientId, cancellationToken);
         if (client is null)
         {
             return NotFound();
@@ -64,11 +55,7 @@ public class ClientsController : ControllerBase
             return BadRequest("GeekBackendApiBaseUrl, OAuthTokenEndpoint, ClientIdEnvVar, and ClientSecretEnvVar are required.");
         }
 
-        if (client.PublishTarget is null)
-        {
-            client.PublishTarget = new PublishTarget { ClientId = client.Id };
-            _db.PublishTargets.Add(client.PublishTarget);
-        }
+        client.PublishTarget ??= new PublishTarget { ClientId = client.Id };
 
         client.PublishTarget.GeekBackendApiBaseUrl = request.GeekBackendApiBaseUrl;
         client.PublishTarget.OAuthTokenEndpoint = request.OAuthTokenEndpoint;
@@ -76,8 +63,6 @@ public class ClientsController : ControllerBase
         client.PublishTarget.ClientSecretEnvVar = request.ClientSecretEnvVar;
         client.PublishTarget.DefaultAuthorId = request.DefaultAuthorId;
         client.PublishTarget.CategoryStrategy = request.CategoryStrategy;
-
-        await _db.SaveChangesAsync(cancellationToken);
 
         return Ok(ToResponse(client));
     }

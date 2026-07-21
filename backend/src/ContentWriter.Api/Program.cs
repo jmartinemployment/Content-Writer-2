@@ -1,7 +1,6 @@
 using System.Text.Json.Serialization;
 using ContentWriter.Api.Hosting;
 using DotNetEnv;
-using Microsoft.EntityFrameworkCore;
 
 Env.TraversePath().Load();
 
@@ -41,7 +40,7 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-await app.InitializeContentWriterDatabaseAsync();
+await app.SeedContentWriterDefaultsAsync();
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5199";
 app.Run($"http://0.0.0.0:{port}");

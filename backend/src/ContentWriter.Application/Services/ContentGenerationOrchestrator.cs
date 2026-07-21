@@ -5,7 +5,7 @@ using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
-using ContentWriter.Infrastructure.Repositories;
+using ContentWriter.Infrastructure.InMemory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,7 +15,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 {
     private const int MaxPeopleAlsoAskQuestions = 12;
 
-    private readonly IProjectRepository _projectRepository;
+    private readonly IProjectStore _projectStore;
     private readonly IContentProviderFactory _providerFactory;
     private readonly IContentPromptBuilder _promptBuilder;
     private readonly IJsonLdParserService _jsonLdParser;
@@ -26,7 +26,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     private readonly ILogger<ContentGenerationOrchestrator> _logger;
 
     public ContentGenerationOrchestrator(
-        IProjectRepository projectRepository,
+        IProjectStore projectStore,
         IContentProviderFactory providerFactory,
         IContentPromptBuilder promptBuilder,
         IJsonLdParserService jsonLdParser,
@@ -36,7 +36,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         IOptions<CompanyProfileOptions> companyProfile,
         ILogger<ContentGenerationOrchestrator> logger)
     {
-        _projectRepository = projectRepository;
+        _projectStore = projectStore;
         _providerFactory = providerFactory;
         _promptBuilder = promptBuilder;
         _jsonLdParser = jsonLdParser;
@@ -444,7 +444,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
     private async Task<Project> LoadProjectForGenerationAsync(Guid projectId, CancellationToken cancellationToken)
     {
-        var project = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken)
+        var project = await _projectStore.GetAsync(projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
 
         if (project.CrawledSite is null)
@@ -491,21 +491,20 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             return;
         }
 
-        _projectRepository.RemoveGeneratedContents(toRemove);
         foreach (var row in toRemove)
         {
             project.GeneratedContents.Remove(row);
         }
     }
 
-    private async Task AddContentAsync(
+    private Task AddContentAsync(
         Project project,
         LlmProviderType providerType,
         GeneratedContent row,
         CancellationToken cancellationToken)
     {
-        await _projectRepository.AddContentAsync(row, cancellationToken);
         project.GeneratedContents.Add(row);
+        return Task.CompletedTask;
     }
 
     private GeneratedContent RequireCompleteBlog(Project project)
@@ -556,12 +555,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }, cancellationToken);
     }
 
-    private async Task SaveProjectAsync(Project project, ProjectStatus status, CancellationToken cancellationToken)
+    private Task SaveProjectAsync(Project project, ProjectStatus status, CancellationToken cancellationToken)
     {
         project.Status = status;
         project.UpdatedAtUtc = DateTime.UtcNow;
-        _projectRepository.Update(project);
-        await _projectRepository.SaveChangesAsync(cancellationToken);
+        return Task.CompletedTask;
     }
 
     private GeneratedContentSet Assemble(Project project) =>
