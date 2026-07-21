@@ -195,14 +195,10 @@ export async function getGeekBackendCategories(clientId: string, lang = "en"): P
   return (await response.json()) as CategoryOption[];
 }
 
-export async function downloadMdxExport(projectId: string, includeRevise: boolean = false): Promise<void> {
+export async function downloadMdxExport(projectId: string): Promise<void> {
   let response: Response;
   try {
-    const params = new URLSearchParams();
-    if (includeRevise) params.append("includeRevise", "true");
-    const queryString = params.toString();
-    const url = `${API_BASE_URL}/api/projects/${projectId}/export/mdx${queryString ? `?${queryString}` : ""}`;
-    response = await fetch(url);
+    response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/export/mdx`);
   } catch {
     throw new ApiError(
       `Could not reach the API at ${API_BASE_URL}. Hard-refresh the page and confirm the API is running.`,
@@ -225,12 +221,8 @@ export async function downloadMdxExport(projectId: string, includeRevise: boolea
   URL.revokeObjectURL(url);
 }
 
-export function commitMdxExportToGitHub(projectId: string, includeRevise: boolean = false): Promise<CommitMdxExportResult> {
-  const params = new URLSearchParams();
-  if (includeRevise) params.append("includeRevise", "true");
-  const queryString = params.toString();
-  const url = `/api/projects/${projectId}/export/mdx/commit${queryString ? `?${queryString}` : ""}`;
-  return request<CommitMdxExportResult>(url, { method: "POST" });
+export function commitMdxExportToGitHub(projectId: string): Promise<CommitMdxExportResult> {
+  return request<CommitMdxExportResult>(`/api/projects/${projectId}/export/mdx/commit`, { method: "POST" });
 }
 
 export function getLmStudioStatus(): Promise<LmStudioHealthStatus> {

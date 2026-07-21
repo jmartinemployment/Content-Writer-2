@@ -11,7 +11,7 @@ namespace ContentWriter.Application.Services.Export;
 public interface IGeekatyourspotCommitService
 {
     /// <summary>Exports the project's content and commits it as one atomic Git commit to geekatyourspot's content-writer-output/ directory.</summary>
-    Task<GeekatyourspotCommitResult> CommitExportAsync(Guid projectId, bool includeRevise = false, CancellationToken cancellationToken = default);
+    Task<GeekatyourspotCommitResult> CommitExportAsync(Guid projectId, CancellationToken cancellationToken = default);
 }
 
 public sealed record GeekatyourspotCommitResult(string CommitSha, string CommitUrl, IReadOnlyList<string> FilePaths);
@@ -43,7 +43,7 @@ public sealed class GeekatyourspotCommitService : IGeekatyourspotCommitService
         _logger = logger;
     }
 
-    public async Task<GeekatyourspotCommitResult> CommitExportAsync(Guid projectId, bool includeRevise = false, CancellationToken cancellationToken = default)
+    public async Task<GeekatyourspotCommitResult> CommitExportAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         var token = Environment.GetEnvironmentVariable("GEEKATYOURSPOT_GITHUB_TOKEN");
         if (string.IsNullOrWhiteSpace(token))
@@ -52,7 +52,7 @@ public sealed class GeekatyourspotCommitService : IGeekatyourspotCommitService
                 "GEEKATYOURSPOT_GITHUB_TOKEN is not configured — cannot commit to geekatyourspot without a GitHub token.");
         }
 
-        var documents = await _mdxExportService.ExportAsync(projectId, includeRevise, cancellationToken);
+        var documents = await _mdxExportService.ExportAsync(projectId, cancellationToken);
 
         var http = BuildClient(token);
 
