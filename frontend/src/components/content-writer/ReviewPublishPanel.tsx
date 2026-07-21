@@ -24,9 +24,11 @@ export default function ReviewPublishPanel({
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewTypes, setReviewTypes] = useState({ pillar: true, blog: true, tools: true });
+  const [testToolSlug, setTestToolSlug] = useState<string | null>(null);
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [includeRevise, setIncludeRevise] = useState(false);
 
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
@@ -43,8 +45,10 @@ export default function ReviewPublishPanel({
         reviewTypes.blog && "BlogPost",
         reviewTypes.tools && "ToolPost",
       ].filter((t): t is string => Boolean(t));
-      const next = await runReview(projectId, contentTypes);
+      const toolSlug = reviewTypes.tools && result?.toolPosts?.[0]?.slug ? result.toolPosts[0].slug : null;
+      const next = await runReview(projectId, contentTypes, toolSlug);
       setVerdicts(next);
+      setTestToolSlug(toolSlug);
     } catch (err) {
       setReviewError(err instanceof ApiError ? err.message : "Review failed.");
     } finally {
@@ -56,7 +60,7 @@ export default function ReviewPublishPanel({
     setExportError(null);
     setIsExporting(true);
     try {
-      await downloadMdxExport(projectId);
+      await downloadMdxExport(projectId, includeRevise);
     } catch (err) {
       setExportError(err instanceof ApiError ? err.message : "Export failed.");
     } finally {
@@ -69,7 +73,7 @@ export default function ReviewPublishPanel({
     setCommitResult(null);
     setIsCommitting(true);
     try {
-      const next = await commitMdxExportToGitHub(projectId);
+      const next = await commitMdxExportToGitHub(projectId, includeRevise);
       setCommitResult(next);
     } catch (err) {
       setCommitError(err instanceof ApiError ? err.message : "Commit failed.");
@@ -149,7 +153,16 @@ export default function ReviewPublishPanel({
           is optional here — a never-reviewed row is included, only a row reviewed and NOT Approved is excluded.
         </p>
 
-        <div className="flex flex-wrap gap-3">
+        <label className="mt-3 flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={includeRevise}
+            onChange={(e) => setIncludeRevise(e.target.checked)}
+          />
+          Include Revise/Exhausted content in export
+        </label>
+
+        <div className="mt-3 flex flex-wrap gap-3">
           <button
             type="button"
             disabled={isExporting}

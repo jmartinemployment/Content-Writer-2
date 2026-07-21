@@ -15,7 +15,7 @@ public interface IReviewLoopService
     /// Approved becomes Exhausted — visible via the live AttemptCount, not silently retried forever.
     /// </summary>
     Task<List<ReviewVerdict>> RunForProjectAsync(
-        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, CancellationToken cancellationToken = default);
+        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, string? toolSlugToTest = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewLoopService : IReviewLoopService
@@ -43,7 +43,7 @@ public sealed class ReviewLoopService : IReviewLoopService
     };
 
     public async Task<List<ReviewVerdict>> RunForProjectAsync(
-        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, CancellationToken cancellationToken = default)
+        Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, string? toolSlugToTest = null, CancellationToken cancellationToken = default)
     {
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
@@ -70,7 +70,7 @@ public sealed class ReviewLoopService : IReviewLoopService
         if (requestedTypes.Contains(GeneratedContentType.ToolPost)
             && await _db.GeneratedContents.AnyAsync(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.ToolPost, cancellationToken))
         {
-            verdicts.AddRange(await RunToolPostBatchLoopAsync(projectId, project.TargetKeyword, cancellationToken));
+            verdicts.AddRange(await RunToolPostBatchLoopAsync(projectId, project.TargetKeyword, toolSlugToTest, cancellationToken));
         }
 
         return verdicts;
@@ -106,17 +106,21 @@ public sealed class ReviewLoopService : IReviewLoopService
         return verdict;
     }
 
-    /// <summary>Tool posts regenerate as a whole set (GenerateToolPagesAsync has no single-row mode) — reviewed as a batch: any Revise triggers regenerating the entire set, up to MaxAttempts whole-set attempts.</summary>
+    /// <summary>Tool posts reviewed as a batch (or single tool if toolSlugToTest specified). Any Revise triggers regenerating the entire set, up to MaxAttempts whole-set attempts.</summary>
     private async Task<List<ReviewVerdict>> RunToolPostBatchLoopAsync(
-        Guid projectId, string targetKeyword, CancellationToken cancellationToken)
+        Guid projectId, string targetKeyword, string? toolSlugToTest, CancellationToken cancellationToken)
     {
         List<ReviewVerdict> verdicts = [];
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
-            var rows = await _db.GeneratedContents
-                .Where(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.ToolPost)
-                .ToListAsync(cancellationToken);
+            var query = _db.GeneratedContents
+                .Where(c => c.ProjectId == projectId && c.ContentType == GeneratedContentType.ToolPost);
+
+            if (!string.IsNullOrWhiteSpace(toolSlugToTest))
+                query = query.Where(c => c.Slug == toolSlugToTest);
+
+            var rows = await query.ToListAsync(cancellationToken);
 
             verdicts = [];
             foreach (var row in rows)

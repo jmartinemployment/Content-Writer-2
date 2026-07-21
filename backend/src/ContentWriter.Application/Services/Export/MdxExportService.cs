@@ -8,7 +8,7 @@ namespace ContentWriter.Application.Services.Export;
 
 public interface IMdxExportService
 {
-    Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = false, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Renders approved generated content (article, blog, tool posts) as .mdx files: YAML frontmatter over the native Markdown body.</summary>
@@ -21,7 +21,7 @@ public class MdxExportService : IMdxExportService
         _projectRepository = projectRepository;
     }
 
-    public async Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = false, CancellationToken cancellationToken = default)
     {
         var project = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
@@ -35,7 +35,7 @@ public class MdxExportService : IMdxExportService
                 or GeneratedContentType.SocialFacebook
                 or GeneratedContentType.SocialLinkedIn
                 or GeneratedContentType.EmailColdOutreach)
-            .Where(IsApproved)
+            .Where(r => IsApproved(r, includeRevise))
             .OrderBy(c => c.ContentType)
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
         {
@@ -45,8 +45,7 @@ public class MdxExportService : IMdxExportService
         if (documents.Count == 0)
         {
             throw new ContentGenerationException(
-                "Nothing to export. Generate content first — review is optional, but any row that WAS " +
-                "reviewed and isn't Approved is excluded.");
+                "Nothing to export. Generate content first — review is optional, but unreviewed rows always export.");
         }
 
         return documents;
@@ -142,10 +141,13 @@ public class MdxExportService : IMdxExportService
         return $"{key}: [{string.Join(", ", values.Select(YamlString))}]";
     }
 
-    /// <summary>Export gate: review is opt-in, not mandatory — a row with no verdict at all is allowed through. Only a row that WAS reviewed and isn't Approved gets blocked.</summary>
-    private static bool IsApproved(GeneratedContent row)
+    /// <summary>Export gate: unreviewed rows always pass. Approved rows always pass. Revise/Exhausted rows only pass if includeRevise=true.</summary>
+    private static bool IsApproved(GeneratedContent row, bool includeRevise)
     {
         var latest = row.ReviewVerdicts.OrderByDescending(v => v.CreatedAtUtc).FirstOrDefault();
-        return latest is null || latest.Status == ReviewVerdictStatus.Approved;
+        if (latest is null)
+            return true; // unreviewed
+
+        return latest.Status == ReviewVerdictStatus.Approved || (includeRevise && latest.Status != ReviewVerdictStatus.Approved);
     }
 }

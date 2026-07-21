@@ -28,7 +28,7 @@ public class ReviewController : ControllerBase
                 ? new HashSet<GeneratedContentType>(request.ContentTypes)
                 : null;
 
-            var verdicts = await _reviewLoop.RunForProjectAsync(projectId, contentTypes, cancellationToken);
+            var verdicts = await _reviewLoop.RunForProjectAsync(projectId, contentTypes, request?.ToolSlugToTest, cancellationToken);
             return Ok(verdicts.Select(v => new ReviewVerdictResponse(
                 v.Id, v.GeneratedContentId, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
                 v.NotesJson, v.RetryCount, v.RetryReason, v.CreatedAtUtc)).ToList());
@@ -41,7 +41,7 @@ public class ReviewController : ControllerBase
     }
 }
 
-public sealed record RunReviewRequest(List<GeneratedContentType>? ContentTypes);
+public sealed record RunReviewRequest(List<GeneratedContentType>? ContentTypes, string? ToolSlugToTest = null);
 
 public sealed record ReviewVerdictResponse(
     Guid Id, Guid GeneratedContentId, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,

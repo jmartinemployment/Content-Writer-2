@@ -145,13 +145,14 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine("Write ONE section of a schema.org TechnicalArticle pillar — third person, expert, implementation-focused.")
+            .AppendLine("Write ONE section of a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
             .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
             .AppendLine("Output ONLY GitHub-Flavored Markdown for this section. No JSON. No code fences wrapping the output.")
             .AppendLine(isFirst
                 ? "Start with 2-3 introductory paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then \"## \" for this section."
                 : "Start with \"## \" for this section only — no intro paragraphs.")
             .AppendLine("Include 2-3 \"### \" subsections with multiple paragraphs and at least one \"- \" bullet list where appropriate.")
+            .AppendLine($"If natural for this section, include a specific example or brief case-study-style scenario tied to {context.PublisherName} ({context.ImplementerPositioning}) solving a client problem — not just general industry commentary.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
@@ -196,6 +197,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write ONLY the \"People Also Ask\" FAQ section of a TechnicalArticle pillar.")
             .AppendLine("Start with \"## People Also Ask\". Each question is a \"### \" heading followed by a 2-4 sentence answer paragraph.")
             .AppendLine("Direct, factual answers. Third person. GitHub-Flavored Markdown only. No JSON.")
+            .AppendLine($"Answers must sound like {context.PublisherName} ({context.ImplementerPositioning}), not a generic textbook FAQ — reflect the same consultative brand voice as the rest of the article, not interchangeable boilerplate.")
             .ToString();
 
         if (isRegeneration)
@@ -240,12 +242,13 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Detected site focus/topics: {context.DetectedFocus}.")
             .AppendLine("Content type: schema.org TechnicalArticle — a deep technical pillar, NOT a BlogPosting or FAQ page.")
             .AppendLine($"Editorial standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
-            .AppendLine("Write an authoritative pillar article. Tone: third person, expert, implementation-focused.")
-            .AppendLine("ANTI-PATTERNS (do NOT do these): first/second person blog voice; short 2-sentence sections; question-mark H2s outside the FAQ section; turning the whole article into Q&A.")
+            .AppendLine("Write an authoritative pillar article. Tone: third person, expert, consultative — write like a senior consultant advising a prospective client, not a marketing blog.")
+            .AppendLine("ANTI-PATTERNS (do NOT do these): first/second person blog voice; short 2-sentence sections; question-mark H2s outside the FAQ section; turning the whole article into Q&A; generic industry commentary that could apply to any AI vendor.")
+            .AppendLine($"CONCRETE EXAMPLES REQUIRED: at least one main section must include a specific example, brief case-study-style scenario, or concrete client-problem-to-outcome illustration of how {context.PublisherName} ({context.ImplementerPositioning}) solves problems related to {context.TargetKeyword} — not just industry facts about the topic in general.")
             .AppendLine("REQUIRED STRUCTURE:")
             .AppendLine("  1. Opening: 2-3 paragraphs before the first \"## \" heading (context, problem, thesis).")
             .AppendLine("  2. Main \"## \" sections (from outline, excluding FAQ): each with multiple \"### \" subsections, 3+ paragraphs, and at least one \"- \" bullet list where appropriate.")
-            .AppendLine("  3. Final \"## People Also Ask\" only: each FAQ as a \"### \" heading + 2-4 sentence answer paragraph. FAQ must NOT appear earlier in the article.")
+            .AppendLine($"  3. Final \"## People Also Ask\" only: each FAQ as a \"### \" heading + 2-4 sentence answer paragraph, written in the same consultative brand voice as the rest of the article — not generic textbook answers. FAQ must NOT appear earlier in the article.")
             .AppendLine("Ground factual claims in AUTHORITATIVE SOURCES — paraphrase and attribute where appropriate.")
             .AppendLine($"Target at least {ContentLengthTargets.PillarMinWords:N0} words (aim for {ContentLengthTargets.PillarTargetMinWords:N0}-{ContentLengthTargets.PillarTargetMaxWords:N0}). Do not stop early.")
             .AppendLine("Respond with ONLY GitHub-Flavored Markdown. No JSON wrapper. No code fences wrapping the output.")

@@ -177,10 +177,13 @@ export function generateAllContent(projectId: string): Promise<GeneratedContentS
   return request<GeneratedContentSet>(`/api/projects/${projectId}/generate`, { method: "POST" });
 }
 
-export function runReview(projectId: string, contentTypes?: string[]): Promise<ReviewVerdict[]> {
+export function runReview(projectId: string, contentTypes?: string[], toolSlugToTest?: string | null): Promise<ReviewVerdict[]> {
+  const body: { contentTypes?: string[]; toolSlugToTest?: string } = {};
+  if (contentTypes?.length) body.contentTypes = contentTypes;
+  if (toolSlugToTest) body.toolSlugToTest = toolSlugToTest;
   return request<ReviewVerdict[]>(`/api/projects/${projectId}/review`, {
     method: "POST",
-    body: JSON.stringify(contentTypes?.length ? { contentTypes } : {}),
+    body: JSON.stringify(body),
   });
 }
 
@@ -192,10 +195,14 @@ export async function getGeekBackendCategories(clientId: string, lang = "en"): P
   return (await response.json()) as CategoryOption[];
 }
 
-export async function downloadMdxExport(projectId: string): Promise<void> {
+export async function downloadMdxExport(projectId: string, includeRevise: boolean = false): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/export/mdx`);
+    const params = new URLSearchParams();
+    if (includeRevise) params.append("includeRevise", "true");
+    const queryString = params.toString();
+    const url = `${API_BASE_URL}/api/projects/${projectId}/export/mdx${queryString ? `?${queryString}` : ""}`;
+    response = await fetch(url);
   } catch {
     throw new ApiError(
       `Could not reach the API at ${API_BASE_URL}. Hard-refresh the page and confirm the API is running.`,
@@ -218,8 +225,12 @@ export async function downloadMdxExport(projectId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export function commitMdxExportToGitHub(projectId: string): Promise<CommitMdxExportResult> {
-  return request<CommitMdxExportResult>(`/api/projects/${projectId}/export/mdx/commit`, { method: "POST" });
+export function commitMdxExportToGitHub(projectId: string, includeRevise: boolean = false): Promise<CommitMdxExportResult> {
+  const params = new URLSearchParams();
+  if (includeRevise) params.append("includeRevise", "true");
+  const queryString = params.toString();
+  const url = `/api/projects/${projectId}/export/mdx/commit${queryString ? `?${queryString}` : ""}`;
+  return request<CommitMdxExportResult>(url, { method: "POST" });
 }
 
 export function getLmStudioStatus(): Promise<LmStudioHealthStatus> {
