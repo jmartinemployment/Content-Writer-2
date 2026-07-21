@@ -2,7 +2,7 @@ using System.Text;
 using ContentWriter.Application.Providers;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
-using ContentWriter.Infrastructure.Repositories;
+using ContentWriter.Infrastructure.InMemory;
 
 namespace ContentWriter.Application.Services.Export;
 
@@ -11,19 +11,19 @@ public interface IMdxExportService
     Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Renders approved generated content (article, blog, tool posts) as .mdx files: YAML frontmatter over the native Markdown body.</summary>
+/// <summary>Renders approved generated content (article, blog, tool posts) as .html files: YAML frontmatter over the native HTML body.</summary>
 public class MdxExportService : IMdxExportService
 {
-    private readonly IProjectRepository _projectRepository;
+    private readonly IProjectStore _projectStore;
 
-    public MdxExportService(IProjectRepository projectRepository)
+    public MdxExportService(IProjectStore projectStore)
     {
-        _projectRepository = projectRepository;
+        _projectStore = projectStore;
     }
 
     public async Task<IReadOnlyList<MdxDocument>> ExportAsync(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
-        var project = await _projectRepository.GetWithDetailsAsync(projectId, cancellationToken)
+        var project = await _projectStore.GetAsync(projectId, cancellationToken)
             ?? throw new ContentGenerationException($"Project {projectId} was not found.");
 
         var documents = new List<MdxDocument>();
@@ -37,7 +37,9 @@ public class MdxExportService : IMdxExportService
                 or GeneratedContentType.EmailColdOutreach
                 or GeneratedContentType.ImagePromptPillarFigure
                 or GeneratedContentType.ImagePromptBlogFigure
-                or GeneratedContentType.ImagePromptSection)
+                or GeneratedContentType.ImagePromptSection
+                or GeneratedContentType.ImagePromptSocialFacebook
+                or GeneratedContentType.ImagePromptSocialLinkedIn)
             .Where(r => IsApproved(r, includeRevise))
             .OrderBy(c => c.ContentType)
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
@@ -79,7 +81,7 @@ public class MdxExportService : IMdxExportService
         frontmatter.AppendLine("---");
 
         var folder = FolderFor(row.ContentType);
-        return new MdxDocument($"{folder}/{slug}.mdx", $"{frontmatter}\n{body}\n");
+        return new MdxDocument($"{folder}/{slug}.html", $"{frontmatter}\n{body}\n");
     }
 
     /// <summary>Maps a content type to its Keystatic collection folder under content-writer-output/.</summary>
@@ -94,6 +96,8 @@ public class MdxExportService : IMdxExportService
         GeneratedContentType.ImagePromptPillarFigure => "image-prompts/pillar",
         GeneratedContentType.ImagePromptBlogFigure => "image-prompts/blog",
         GeneratedContentType.ImagePromptSection => "image-prompts/sections",
+        GeneratedContentType.ImagePromptSocialFacebook => "image-prompts/social/facebook",
+        GeneratedContentType.ImagePromptSocialLinkedIn => "image-prompts/social/linkedin",
         _ => "misc",
     };
 

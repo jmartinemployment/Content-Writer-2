@@ -1,4 +1,10 @@
 <!-- 670425f1-8725-4f8c-a694-ed646feb6220 -->
+> **SUPERSEDED — kept for history, do not follow.** This doc describes the original v2 architecture, which has since pivoted on the points below. Read this before anything else in this file.
+>
+> - **No database, no EF Core, no repository pattern.** State lives in a plain in-process object store (`ProjectStore`/`ClientStore` in `ContentWriter.Infrastructure/InMemory/`), for the process lifetime only. This isn't a stopgap or a preference — two earlier database-backed designs for storing/serving content were tried and vetoed because they couldn't support the fine-grained per-element access this pipeline needs (e.g. `entry.sections[1].heading`, moving to a flat `entry.blocks[n]`). Relational/nested DB storage fought that access pattern; file-based export doesn't.
+> - **"Markdown export — retired" below is wrong — it's the opposite.** `.html` export (migrated from `.mdx` on 2026-07-21 — the body was always raw HTML off `row.BodyHtml`; `.mdx` was a misnomer, no MDX/JSX compilation ever happened), committed directly to the geekatyourspot GitHub repo via `GeekatyourspotCommitService` (Git Data API), is now the *entire* persistence mechanism. It supersedes the GeekBackend-publish flow this doc describes throughout.
+> - **The GeekBackend-publish path (Phase 3/4 below, `PublishTarget`, `PublishService`, the `BatchJob`/batch-worker architecture) was descoped, then the publish consumer itself was deleted** (`be84763`, "Delete GeekBackend Publish path"). Current pipeline: crawl → upload keyword sources → generate → (optional) review → export/commit-to-geekatyourspot. No batch worker, no job queue, no publish gate — export is unconditional (`includeRevise` checkbox controls whether Revise/Exhausted rows are included; nothing restricts to Approved-only).
+> - **Content schema is moving from a nested `sections[]` tree to a flat `blocks[]` array** as the frontmatter shape for exported `.html` — every heading/paragraph/list/etc. individually addressable, no remainder content requiring a fallback renderer.
 ---
 todos:
   - id: "v2-skeleton"
