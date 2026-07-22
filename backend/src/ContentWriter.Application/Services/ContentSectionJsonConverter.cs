@@ -20,17 +20,17 @@ public sealed class ParagraphJsonConverter : JsonConverter<Paragraph>
         {
             "list" => new ListParagraph(
                 root.TryGetProperty("ordered", out var o) && o.GetBoolean(),
-                root.GetProperty("items")
-                    .EnumerateArray()
-                    .Select(item => (IReadOnlyList<Run>)item.EnumerateArray()
-                        .Select(r => r.Deserialize<Run>(options)!)
-                        .ToList())
-                    .ToList()),
+                root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array
+                    ? items.EnumerateArray()
+                        .Select(item => (IReadOnlyList<Run>)(item.ValueKind == JsonValueKind.Array
+                            ? item.EnumerateArray().Select(r => r.Deserialize<Run>(options) ?? new Run(string.Empty)).ToList()
+                            : []))
+                        .ToList()
+                    : []),
             _ => new TextParagraph(
-                root.GetProperty("runs")
-                    .EnumerateArray()
-                    .Select(r => r.Deserialize<Run>(options)!)
-                    .ToList()),
+                root.TryGetProperty("runs", out var runs) && runs.ValueKind == JsonValueKind.Array
+                    ? runs.EnumerateArray().Select(r => r.Deserialize<Run>(options) ?? new Run(string.Empty)).ToList()
+                    : []),
         };
     }
 
