@@ -45,7 +45,7 @@ public static class LlmResponseJsonParser
                 var section = JsonSerializer.Deserialize<Section>(candidate, SectionJsonOptions);
                 if (section is not null && !string.IsNullOrWhiteSpace(section.Heading))
                 {
-                    var normalized = section with { Tag = expectedTag };
+                    var normalized = Normalize(section) with { Tag = expectedTag };
                     ValidateContentHygiene(normalized, label);
                     return normalized;
                 }
@@ -72,11 +72,12 @@ public static class LlmResponseJsonParser
                 var parsed = JsonSerializer.Deserialize<SectionsArrayResponse>(candidate, SectionJsonOptions);
                 if (parsed?.Sections is { Count: > 0 } sections)
                 {
-                    foreach (var section in sections)
+                    var normalized = sections.Select(Normalize).ToList();
+                    foreach (var section in normalized)
                     {
                         ValidateContentHygiene(section, label);
                     }
-                    return sections;
+                    return normalized;
                 }
             }
             catch (JsonException)
@@ -104,7 +105,7 @@ public static class LlmResponseJsonParser
                     var ledeType = string.Equals(parsed.LedeType, "summary", StringComparison.OrdinalIgnoreCase)
                         ? LedeType.Summary
                         : LedeType.Creative;
-                    var section = new Section("h2", parsed.Heading, parsed.Paragraphs ?? [], null, []);
+                    var section = Normalize(new Section("h2", parsed.Heading, parsed.Paragraphs ?? [], null, []));
                     ValidateContentHygiene(section, label);
                     return (section, ledeType);
                 }
@@ -122,6 +123,31 @@ public static class LlmResponseJsonParser
     private sealed record SectionsArrayResponse(List<Section>? Sections);
 
     private sealed record LedeResponse(string? LedeType, string Heading, List<Paragraph>? Paragraphs);
+
+    /// <summary>
+    /// System.Text.Json does not enforce non-null on a record's reference-typed constructor params —
+    /// a provider without native schema enforcement (OpenAI/Groq/LM Studio today; see the provider
+    /// reality check in the design plan) can omit "children"/"paragraphs"/"runs" or leave a "text"
+    /// field null, which would otherwise NRE the first time anything iterates the tree. Normalize
+    /// once at the parse boundary so every downstream consumer can trust the non-null invariant.
+    /// </summary>
+    private static Section Normalize(Section section) => section with
+    {
+        Heading = section.Heading ?? string.Empty,
+        Paragraphs = (section.Paragraphs ?? []).Select(NormalizeParagraph).ToList(),
+        Children = (section.Children ?? []).Select(Normalize).ToList(),
+    };
+
+    private static Paragraph NormalizeParagraph(Paragraph paragraph) => paragraph switch
+    {
+        TextParagraph text => new TextParagraph((text.Runs ?? []).Select(NormalizeRun).ToList()),
+        ListParagraph list => new ListParagraph(
+            list.Ordered,
+            (list.Items ?? []).Select(item => (IReadOnlyList<Run>)(item ?? []).Select(NormalizeRun).ToList()).ToList()),
+        _ => paragraph,
+    };
+
+    private static Run NormalizeRun(Run run) => run with { Text = run.Text ?? string.Empty };
 
     private static void ValidateContentHygiene(Section section, string label)
     {
