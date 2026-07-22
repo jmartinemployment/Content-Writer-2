@@ -142,6 +142,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
         var isFirst = sectionIndex == 0;
         var isTools = PillarSectionClassifier.IsToolsSection(sectionHeading);
+        var isBestPractices = PillarSectionClassifier.IsBestPracticesSection(sectionHeading);
+        var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
 
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
@@ -152,13 +154,27 @@ public class ContentPromptBuilder : IContentPromptBuilder
                 ? "Start with 2-3 introductory paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then \"## \" for this section."
                 : "Start with \"## \" for this section only — no intro paragraphs.")
             .AppendLine("Include 2-3 \"### \" subsections with multiple paragraphs and at least one \"- \" bullet list where appropriate.")
-            .AppendLine($"If natural for this section, include a specific example or brief case-study-style scenario tied to {context.PublisherName} ({context.ImplementerPositioning}) solving a client problem — not just general industry commentary.")
+            .AppendLine($"If natural for this section, illustrate with a brief scenario of how {context.PublisherName} ({context.ImplementerPositioning}) solves this client problem — not just general industry commentary.")
+            .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
+            .AppendLine("You may still use a scenario with a concrete quantified outcome for narrative punch (e.g. \"a 40% drop in processing time\"), ")
+            .AppendLine("but it MUST be explicitly labeled hypothetical/illustrative — e.g. \"Consider a hypothetical mid-sized manufacturer that...\" or ")
+            .AppendLine("\"In a representative scenario, an implementer might reduce...\". Never phrase it as something that already happened to a real client.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
         if (isTools)
         {
             system += Environment.NewLine + BuildToolsSectionGuidance(context);
+        }
+
+        if (isBestPractices)
+        {
+            system += Environment.NewLine + BuildBestPracticesSectionGuidance(context);
+        }
+
+        if (isFutureTrends)
+        {
+            system += Environment.NewLine + BuildFutureTrendsSectionGuidance(context);
         }
 
         if (isRegeneration)
@@ -562,6 +578,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Start at the first \"## \" heading — no introductory paragraphs before it.")
             .AppendLine("Required \"## \" sections: Overview, Key Capabilities, Implementation Considerations, When to Use.")
             .AppendLine($"Target at least {ContentLengthTargets.ToolMinWords:N0} words (aim for {ContentLengthTargets.ToolTargetMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0}). Hard maximum {ContentLengthTargets.ToolHardMaxWords:N0}. Do not stop early.")
+            .AppendLine($"Only describe real, verifiable capabilities of {app.Name} — never invent a feature, integration, or claim to fill space.")
+            .AppendLine("Implementation Considerations must not be generic industry advice: name the concrete mechanism by which " +
+                $"{context.PublisherName} ({context.ImplementerPositioning}) closes the gap for a client deploying this tool — " +
+                "accelerated deployment timelines, data model design, workflow/process configuration, integrations, or change management (training, adoption, rollout).")
+            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
+                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
             .ToString();
 
         var user = new StringBuilder()
@@ -711,7 +733,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return new StringBuilder()
             .AppendLine("TOOLS SECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
-            .AppendLine("Cover 4-6 major platforms or tools relevant to the target keyword (only well-known products; do not invent feature names).")
+            .AppendLine("Cover 4-6 major platforms or tools relevant to the target keyword — only real, verifiable, well-known products. Never invent a tool name, vendor, feature, or capability; if unsure a feature exists, describe it generically instead of naming it.")
             .AppendLine("For EACH platform use this Markdown pattern (heading levels matter — do not deviate):")
             .AppendLine("  ### {Platform name}")
             .AppendLine("  Brief overview of what the platform does for this use case.")
@@ -725,6 +747,39 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
             .AppendLine($"Target {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words for this Tools section (longer than other sections).")
             .AppendLine("Each platform <h3> should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
+            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
+                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+            .ToString();
+    }
+
+    private static string BuildBestPracticesSectionGuidance(ProjectGenerationContext context)
+    {
+        return new StringBuilder()
+            .AppendLine("BEST PRACTICES SECTION REQUIREMENTS:")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine("Do not write generic industry advice divorced from the publisher. For each practice, tie it explicitly to how ")
+            .AppendLine($"{context.PublisherName} solves that problem for clients — name the concrete mechanism: accelerated deployment timelines, ")
+            .AppendLine("data model design, workflow/process configuration, integration setup, or change management (training, adoption, rollout).")
+            .AppendLine("Example pattern: state the practice, then 1-2 sentences on what goes wrong without it, then how an experienced implementer ")
+            .AppendLine("closes that gap (e.g. \"Without a documented data model, teams re-map fields after go-live; an implementer front-loads this ")
+            .AppendLine("during discovery so config work doesn't get redone.\").")
+            .AppendLine("Any tool or platform named here must be real and verifiable — never invent a feature or product to illustrate a practice.")
+            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
+                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+            .ToString();
+    }
+
+    private static string BuildFutureTrendsSectionGuidance(ProjectGenerationContext context)
+    {
+        return new StringBuilder()
+            .AppendLine("FUTURE TRENDS SECTION REQUIREMENTS:")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine("Do not end this section as neutral industry commentary. For each trend, add 1-2 sentences on how ")
+            .AppendLine($"{context.PublisherName} is positioned to help clients act on it now — e.g. evaluating/piloting the trend, adapting existing ")
+            .AppendLine("data models or workflows to it, or guiding change management as teams adopt it. Keep it consultative, not a sales pitch.")
+            .AppendLine("Only cite real, verifiable tools, vendors, or capabilities when discussing a trend — never invent one to make the trend concrete.")
+            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
+                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
             .ToString();
     }
 }

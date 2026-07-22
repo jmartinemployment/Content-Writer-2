@@ -20,4 +20,36 @@ internal static class PillarSectionClassifier
 
         return false;
     }
+
+    public static bool IsBestPracticesSection(string sectionHeading)
+    {
+        var text = sectionHeading.Trim();
+        ReadOnlySpan<string> markers = ["best practice", "checklist", "how to succeed", "successful"];
+
+        foreach (var marker in markers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsFutureTrendsSection(string sectionHeading)
+    {
+        var text = sectionHeading.Trim();
+        ReadOnlySpan<string> markers = ["future", "trend", "what's next", "emerging", "outlook"];
+
+        foreach (var marker in markers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
