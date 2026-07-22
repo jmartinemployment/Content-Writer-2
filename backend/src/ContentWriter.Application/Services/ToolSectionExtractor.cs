@@ -55,7 +55,10 @@ public static class ToolSectionExtractor
                 ? string.Join(" ", firstParagraph.Runs.Select(r => r.Text))
                 : null;
 
-            applications.Add(new SoftwareApplicationDescriptor(name, description));
+            // .Href is null until InjectToolLinks has run (tool pages don't exist yet the first time
+            // this is called, during pillar-body generation) — populated on later calls once the
+            // Tools section's child links have actually been assigned.
+            applications.Add(new SoftwareApplicationDescriptor(name, description, platform.Href));
         }
 
         if (applications.Count == 0)

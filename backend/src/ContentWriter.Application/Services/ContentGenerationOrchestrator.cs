@@ -180,6 +180,20 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 "Tool page generation for project {ProjectId} produced no tools: {Outcome}",
                 projectId, generation.Outcome);
         }
+        else
+        {
+            // Tool pages (and their real slugs/URLs) didn't exist when the pillar's JSON+LD was first
+            // built in GeneratePillarBodyAsync, so its SoftwareApplication entries had no "url". Now
+            // that ToolPageGenerator has injected real hrefs into articleRow.Body's Tools section,
+            // rebuild it so the embedded schema doesn't silently stay stale if the blog step never runs.
+            var now = DateTime.UtcNow;
+            var articleMetadata = new ContentMetadata(
+                metadata.Title, metadata.MetaDescription, context.AuthorName, context.PublisherName,
+                context.PublisherLogoUrl, articleUrl, context.PublisherLogoUrl, now, now, metadata.Keywords, articleRow.WordCount);
+            var softwareApplications = ToolSectionExtractor.ExtractApplications(articleRow.Body, metadata.SectionOutline);
+            articleRow.JsonLdSchema = _articleSchemaBuilder.Build(
+                articleMetadata, articleRow.RelatedArticleUrl ?? string.Empty, softwareApplications);
+        }
 
         await SaveProjectAsync(project, ProjectStatus.ReadyForGeneration, cancellationToken);
         return Assemble(project);

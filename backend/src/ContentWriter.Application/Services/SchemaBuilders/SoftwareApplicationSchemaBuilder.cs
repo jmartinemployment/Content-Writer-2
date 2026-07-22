@@ -4,7 +4,7 @@ using ContentWriter.Application.DTOs;
 
 namespace ContentWriter.Application.Services.SchemaBuilders;
 
-public sealed record SoftwareApplicationDescriptor(string Name, string? Description);
+public sealed record SoftwareApplicationDescriptor(string Name, string? Description, string? Url = null);
 
 public interface ISoftwareApplicationSchemaBuilder
 {
@@ -101,6 +101,11 @@ public class SoftwareApplicationSchemaBuilder : ISoftwareApplicationSchemaBuilde
         if (!string.IsNullOrWhiteSpace(application.Description))
         {
             node["description"] = application.Description.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(application.Url))
+        {
+            node["url"] = application.Url;
         }
 
         return node;
