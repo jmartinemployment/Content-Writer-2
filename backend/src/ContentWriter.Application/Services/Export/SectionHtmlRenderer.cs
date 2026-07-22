@@ -11,20 +11,29 @@ namespace ContentWriter.Application.Services.Export;
 /// </summary>
 public static class SectionHtmlRenderer
 {
-    /// <summary>Builds a full standalone HTML document: doctype, head metadata, H1 title, lede, sections.</summary>
+    /// <summary>Builds a full standalone HTML document: doctype, head metadata (canonical, Open Graph,
+    /// Twitter card, JSON+LD, robots, viewport), H1 title, lede, sections.</summary>
     public static string RenderDocument(
         string title,
         string? description,
+        string? canonicalUrl,
+        string ogType,
+        string? ogImage,
+        string? jsonLdSchema,
         IReadOnlyDictionary<string, string?> additionalMeta,
         ContentDocument body)
     {
         var doc = new HtmlDocument();
         var html = doc.CreateElement("html");
+        html.SetAttributeValue("lang", "en");
         doc.DocumentNode.AppendChild(html);
 
         var head = doc.CreateElement("head");
         html.AppendChild(head);
         AppendMeta(doc, head, "charset", null, "utf-8");
+        AppendMeta(doc, head, null, "viewport", "width=device-width, initial-scale=1");
+        AppendMeta(doc, head, null, "robots", "index, follow");
+
         var titleNode = doc.CreateElement("title");
         titleNode.AppendChild(CreateEncodedTextNode(doc, title));
         head.AppendChild(titleNode);
@@ -32,6 +41,26 @@ public static class SectionHtmlRenderer
         {
             AppendMeta(doc, head, null, "description", description);
         }
+        if (!string.IsNullOrWhiteSpace(canonicalUrl))
+        {
+            var link = doc.CreateElement("link");
+            link.SetAttributeValue("rel", "canonical");
+            link.SetAttributeValue("href", canonicalUrl);
+            head.AppendChild(link);
+        }
+
+        AppendOpenGraphAndTwitter(doc, head, title, description, canonicalUrl, ogType, ogImage);
+
+        if (!string.IsNullOrWhiteSpace(jsonLdSchema) && jsonLdSchema.Trim() is not ("{}" or "[]"))
+        {
+            var script = doc.CreateElement("script");
+            script.SetAttributeValue("type", "application/ld+json");
+            // JSON, not HTML — must not be entity-encoded, but a literal "</script>" inside a string
+            // value would still break out of the tag, so guard against that specifically.
+            script.InnerHtml = jsonLdSchema.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase);
+            head.AppendChild(script);
+        }
+
         foreach (var (name, value) in additionalMeta)
         {
             if (!string.IsNullOrWhiteSpace(value))
@@ -54,6 +83,44 @@ public static class SectionHtmlRenderer
         }
 
         return "<!doctype html>\n" + doc.DocumentNode.OuterHtml;
+    }
+
+    private static void AppendOpenGraphAndTwitter(
+        HtmlDocument doc, HtmlNode head, string title, string? description, string? canonicalUrl, string ogType, string? ogImage)
+    {
+        AppendMetaProperty(doc, head, "og:type", ogType);
+        AppendMetaProperty(doc, head, "og:title", title);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            AppendMetaProperty(doc, head, "og:description", description);
+        }
+        if (!string.IsNullOrWhiteSpace(canonicalUrl))
+        {
+            AppendMetaProperty(doc, head, "og:url", canonicalUrl);
+        }
+        if (!string.IsNullOrWhiteSpace(ogImage))
+        {
+            AppendMetaProperty(doc, head, "og:image", ogImage);
+        }
+
+        AppendMeta(doc, head, null, "twitter:card", string.IsNullOrWhiteSpace(ogImage) ? "summary" : "summary_large_image");
+        AppendMeta(doc, head, null, "twitter:title", title);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            AppendMeta(doc, head, null, "twitter:description", description);
+        }
+        if (!string.IsNullOrWhiteSpace(ogImage))
+        {
+            AppendMeta(doc, head, null, "twitter:image", ogImage);
+        }
+    }
+
+    private static void AppendMetaProperty(HtmlDocument doc, HtmlNode head, string property, string content)
+    {
+        var meta = doc.CreateElement("meta");
+        meta.SetAttributeValue("property", property);
+        meta.SetAttributeValue("content", content);
+        head.AppendChild(meta);
     }
 
     /// <summary>Renders just the body fragment (lede + sections) — used by the preview UI.</summary>

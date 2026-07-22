@@ -2,6 +2,7 @@ using ContentWriter.Application.Providers;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 using ContentWriter.Infrastructure.InMemory;
+using Microsoft.Extensions.Options;
 
 namespace ContentWriter.Application.Services.Export;
 
@@ -13,15 +14,18 @@ public interface IHtmlExportService
 /// <summary>
 /// Renders approved generated content (article, blog, tool posts, social, email, image prompts) as
 /// real standalone .html documents — no YAML frontmatter, no Keystatic contract. Metadata travels as
-/// &lt;meta&gt; tags; the body is the literal rendered Section tree via <see cref="SectionHtmlRenderer"/>.
+/// &lt;meta&gt;/&lt;link&gt;/&lt;script type="application/ld+json"&gt; tags; the body is the literal
+/// rendered Section tree via <see cref="SectionHtmlRenderer"/>.
 /// </summary>
 public class HtmlExportService : IHtmlExportService
 {
     private readonly IProjectStore _projectStore;
+    private readonly CompanyProfileOptions _companyProfile;
 
-    public HtmlExportService(IProjectStore projectStore)
+    public HtmlExportService(IProjectStore projectStore, IOptions<CompanyProfileOptions> companyProfile)
     {
         _projectStore = projectStore;
+        _companyProfile = companyProfile.Value;
     }
 
     public async Task<IReadOnlyList<ExportedHtmlDocument>> ExportAsync(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
@@ -59,7 +63,7 @@ public class HtmlExportService : IHtmlExportService
         return documents;
     }
 
-    private static ExportedHtmlDocument ToHtmlDocument(GeneratedContent row, string department)
+    private ExportedHtmlDocument ToHtmlDocument(GeneratedContent row, string department)
     {
         var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
         var title = string.IsNullOrWhiteSpace(row.DisplayTitle) ? row.Title : row.DisplayTitle!;
@@ -80,11 +84,37 @@ public class HtmlExportService : IHtmlExportService
             ["tags"] = row.Keywords.Count > 0 ? string.Join(",", row.Keywords) : null,
         };
 
-        var html = SectionHtmlRenderer.RenderDocument(title, row.MetaDescription, meta, body);
+        var canonicalUrl = CanonicalUrlFor(row, department);
+        var ogType = row.ContentType switch
+        {
+            GeneratedContentType.TechnicalArticle or GeneratedContentType.BlogPost => "article",
+            GeneratedContentType.ToolPost => "website",
+            _ => "website",
+        };
+        // JSON+LD is only ever built for these three types (TechnicalArticleSchemaBuilder /
+        // BlogPostingSchemaBuilder / SoftwareApplicationSchemaBuilder) — JsonLdSchema is null/"{}"
+        // for social, email, and image-prompt rows, so RenderDocument's own guard skips the script
+        // tag for those without needing a type check here too.
+        var html = SectionHtmlRenderer.RenderDocument(
+            title, row.MetaDescription, canonicalUrl, ogType, _companyProfile.PublisherLogoUrl, row.JsonLdSchema, meta, body);
 
         var folder = FolderFor(row.ContentType);
         return new ExportedHtmlDocument($"{folder}/{slug}.html", html);
     }
+
+    /// <summary>Matches the URL construction each JSON+LD schema builder already uses
+    /// (<c>ContentGenerationOrchestrator.CombineUrl</c>) — the canonical tag and JSON+LD "url" field
+    /// must agree, since a mismatch there is exactly the kind of thing search engines flag.</summary>
+    private string? CanonicalUrlFor(GeneratedContent row, string department) => row.ContentType switch
+    {
+        GeneratedContentType.TechnicalArticle => CombineUrl(_companyProfile.ArticleBaseUrl, department, row.Slug),
+        GeneratedContentType.BlogPost => CombineUrl(_companyProfile.BlogBaseUrl, department, row.Slug),
+        GeneratedContentType.ToolPost => CombineUrl(_companyProfile.ToolBaseUrl, department, row.Slug),
+        _ => null,
+    };
+
+    private static string CombineUrl(string baseUrl, string department, string slug) =>
+        $"{baseUrl.TrimEnd('/')}/{department}/{slug}";
 
     /// <summary>Maps a content type to its output folder under content-writer-output/.</summary>
     private static string FolderFor(GeneratedContentType contentType) => contentType switch

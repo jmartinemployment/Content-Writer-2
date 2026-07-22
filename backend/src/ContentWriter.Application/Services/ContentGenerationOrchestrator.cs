@@ -199,9 +199,17 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
 
-        var (blog, ledeType) = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
-        var blogSlug = SlugHelper.Slugify(blog.Title);
+        var (blogDraft, ledeType) = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
+        var blogSlug = SlugHelper.Slugify(blogDraft.Title);
         var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
+
+        // The model was explicitly told not to write this link — only we know the real pillar URL,
+        // so it's assigned here as a field write on already-parsed data, never a guessed-at href.
+        var blog = blogDraft with
+        {
+            Body = ContentDocumentText.AppendClosingLink(
+                blogDraft.Body, "Read the full technical guide for implementation depth", articleUrl),
+        };
 
         var now = DateTime.UtcNow;
         var blogMetadata = new ContentMetadata(

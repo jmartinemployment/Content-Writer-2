@@ -43,6 +43,26 @@ public static class ContentDocumentText
     public static Section? FindTopLevelSection(ContentDocument document, string heading) =>
         document.Sections.FirstOrDefault(s => string.Equals(s.Heading, heading, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Appends a real, code-authored closing CTA link to the last top-level section (or the
+    /// lede, if there are no sections). The model is explicitly told not to write this link itself —
+    /// only the orchestrator knows the real URL at generation time, so assigning it here is a field
+    /// write on already-parsed data, never a placeholder href for the model to guess at.</summary>
+    public static ContentDocument AppendClosingLink(ContentDocument document, string linkText, string href)
+    {
+        var ctaParagraph = new TextParagraph([new Run(linkText, Href: href)]);
+
+        if (document.Sections.Count == 0)
+        {
+            var lede = document.Lede with { Paragraphs = [.. document.Lede.Paragraphs, ctaParagraph] };
+            return document with { Lede = lede };
+        }
+
+        var sections = document.Sections.ToList();
+        var lastIndex = sections.Count - 1;
+        sections[lastIndex] = sections[lastIndex] with { Paragraphs = [.. sections[lastIndex].Paragraphs, ctaParagraph] };
+        return document with { Sections = sections };
+    }
+
     /// <summary>Builds the ordered list of section image-prompt targets from already-structured
     /// top-level headings — no markdown heading parsing needed, since the tree is already structured.</summary>
     public static IReadOnlyList<ImagePromptSectionTarget> BuildSectionTargets(

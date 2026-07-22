@@ -71,9 +71,12 @@ public class ContentDocumentTests
             [child]);
         var document = new ContentDocument(lede, [section]);
 
-        var html = SectionHtmlRenderer.RenderDocument("My Title", "My description", new Dictionary<string, string?>(), document);
+        var html = SectionHtmlRenderer.RenderDocument(
+            "My Title", "My description", "https://example.com/page", "article", null, null,
+            new Dictionary<string, string?>(), document);
 
         Assert.StartsWith("<!doctype html>", html);
+        Assert.Contains("<html lang=\"en\">", html);
         Assert.Contains("<title>My Title</title>", html);
         Assert.Contains("<h1>My Title</h1>", html);
         Assert.Contains("<h2>Opening hook</h2>", html);
@@ -81,6 +84,11 @@ public class ContentDocumentTests
         Assert.Contains("<h3>Sub point</h3>", html);
         Assert.Contains("<strong>First</strong>", html);
         Assert.Contains("href=\"https://example.com\"", html);
+        Assert.Contains("rel=\"canonical\"", html);
+        Assert.Contains("property=\"og:title\"", html);
+        Assert.Contains("name=\"twitter:card\"", html);
+        Assert.Contains("name=\"robots\"", html);
+        Assert.Contains("name=\"viewport\"", html);
         Assert.DoesNotContain("##", html);
     }
 
@@ -90,9 +98,24 @@ public class ContentDocumentTests
         var lede = MakeSection("h2", "Lede", "<script>alert(1)</script>");
         var document = new ContentDocument(lede, []);
 
-        var html = SectionHtmlRenderer.RenderDocument("Title", null, new Dictionary<string, string?>(), document);
+        var html = SectionHtmlRenderer.RenderDocument(
+            "Title", null, null, "website", null, null, new Dictionary<string, string?>(), document);
 
         Assert.DoesNotContain("<script>", html);
         Assert.Contains("&lt;script&gt;", html);
+    }
+
+    [Fact]
+    public void SectionHtmlRenderer_embeds_json_ld_verbatim_without_html_encoding()
+    {
+        var lede = MakeSection("h2", "Lede", "body");
+        var document = new ContentDocument(lede, []);
+        const string jsonLd = """{"@context":"https://schema.org","@type":"TechnicalArticle","headline":"Title & More"}""";
+
+        var html = SectionHtmlRenderer.RenderDocument(
+            "Title", null, null, "article", null, jsonLd, new Dictionary<string, string?>(), document);
+
+        Assert.Contains("<script type=\"application/ld+json\">", html);
+        Assert.Contains("\"headline\":\"Title & More\"", html);
     }
 }

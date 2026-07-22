@@ -427,7 +427,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         if (isLast)
         {
             system += Environment.NewLine +
-                      $"End with a paragraph CTA linking readers to the full technical pillar for implementation depth (use placeholder anchor text only — no href url). Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
+                      $"Do not write a CTA/link to the pillar article yourself — that's appended afterward with the real URL. " +
+                      $"Just close out this section's own content. Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
         }
 
         var user = new StringBuilder()
