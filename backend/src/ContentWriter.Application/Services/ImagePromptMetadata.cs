@@ -34,7 +34,7 @@ public static class ImagePromptMetadata
             settings.SourceType ?? InferSourceType(row),
             settings.Heading ?? row.Title,
             settings.Order,
-            row.BodyHtml,
+            ContentDocumentText.Flatten(row.Body),
             settings.Width,
             settings.Height,
             settings.ImageModel,

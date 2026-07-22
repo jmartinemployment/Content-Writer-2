@@ -1,7 +1,7 @@
 import type {
   CategoryOption,
   Client,
-  CommitMdxExportResult,
+  CommitHtmlExportResult,
   CrawlSummary,
   GeneratedContentSet,
   KeywordSourceCategory,
@@ -195,13 +195,13 @@ export async function getGeekBackendCategories(clientId: string, lang = "en"): P
   return (await response.json()) as CategoryOption[];
 }
 
-export async function downloadMdxExport(projectId: string, includeRevise: boolean = true): Promise<void> {
+export async function downloadHtmlExport(projectId: string, includeRevise: boolean = true): Promise<void> {
   let response: Response;
   try {
     const params = new URLSearchParams();
     if (!includeRevise) params.append("includeRevise", "false");
     const queryString = params.toString();
-    const url = `${API_BASE_URL}/api/projects/${projectId}/export/mdx${queryString ? `?${queryString}` : ""}`;
+    const url = `${API_BASE_URL}/api/projects/${projectId}/export/html${queryString ? `?${queryString}` : ""}`;
     response = await fetch(url);
   } catch {
     throw new ApiError(
@@ -220,17 +220,17 @@ export async function downloadMdxExport(projectId: string, includeRevise: boolea
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${projectId}-mdx-export.zip`;
+  link.download = `${projectId}-html-export.zip`;
   link.click();
   URL.revokeObjectURL(url);
 }
 
-export function commitMdxExportToGitHub(projectId: string, includeRevise: boolean = true): Promise<CommitMdxExportResult> {
+export function commitHtmlExportToGitHub(projectId: string, includeRevise: boolean = true): Promise<CommitHtmlExportResult> {
   const params = new URLSearchParams();
   if (!includeRevise) params.append("includeRevise", "false");
   const queryString = params.toString();
-  const url = `/api/projects/${projectId}/export/mdx/commit${queryString ? `?${queryString}` : ""}`;
-  return request<CommitMdxExportResult>(url, { method: "POST" });
+  const url = `/api/projects/${projectId}/export/html/commit${queryString ? `?${queryString}` : ""}`;
+  return request<CommitHtmlExportResult>(url, { method: "POST" });
 }
 
 export function getLmStudioStatus(): Promise<LmStudioHealthStatus> {

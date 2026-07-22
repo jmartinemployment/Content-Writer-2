@@ -1,4 +1,5 @@
 using ContentWriter.Application.Providers;
+using ContentWriter.Application.Services.Export;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 using Microsoft.Extensions.Options;
@@ -8,7 +9,7 @@ namespace ContentWriter.Application.Services.Review;
 public interface IEditorialReviewService
 {
     /// <summary>
-    /// Runs one review pass against a content row's current BodyHtml, using a different LLM than
+    /// Runs one review pass against a content row's current Body, using a different LLM than
     /// the one that wrote it. Scoped to qualitative judgment only — invented-feature/fact check,
     /// pillar-vs-tool consistency, brand voice vs ImplementerPositioning. Structural rules
     /// (heading hierarchy, word-count floors, etc.) are a separate, still-unbuilt concern — see
@@ -60,7 +61,7 @@ public sealed class EditorialReviewService : IEditorialReviewService
             Title: {content.Title}
 
             Body HTML:
-            {content.BodyHtml}
+            {(content.Body is null ? string.Empty : SectionHtmlRenderer.RenderFragment(content.Body))}
             """;
 
         var request = new ChatCompletionRequest(

@@ -9,31 +9,31 @@ namespace ContentWriter.Api.Controllers;
 [Route("api/projects/{projectId:guid}")]
 public class ExportController : ControllerBase
 {
-    private readonly IMdxExportService _mdxExportService;
+    private readonly IHtmlExportService _htmlExportService;
     private readonly IGeekatyourspotCommitService _commitService;
     private readonly ILogger<ExportController> _logger;
 
     public ExportController(
-        IMdxExportService mdxExportService,
+        IHtmlExportService htmlExportService,
         IGeekatyourspotCommitService commitService,
         ILogger<ExportController> logger)
     {
-        _mdxExportService = mdxExportService;
+        _htmlExportService = htmlExportService;
         _commitService = commitService;
         _logger = logger;
     }
 
-    [HttpGet("export/mdx")]
-    public async Task<IActionResult> ExportMdx(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
+    [HttpGet("export/html")]
+    public async Task<IActionResult> ExportHtml(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<MdxDocument> documents;
+        IReadOnlyList<ExportedHtmlDocument> documents;
         try
         {
-            documents = await _mdxExportService.ExportAsync(projectId, includeRevise, cancellationToken);
+            documents = await _htmlExportService.ExportAsync(projectId, includeRevise, cancellationToken);
         }
         catch (ContentGenerationException ex)
         {
-            _logger.LogWarning(ex, "MDX export failed for project {ProjectId}", projectId);
+            _logger.LogWarning(ex, "HTML export failed for project {ProjectId}", projectId);
             return Problem(ex.Message, statusCode: 400, title: "Export failed");
         }
 
@@ -50,16 +50,16 @@ public class ExportController : ControllerBase
         }
 
         zipStream.Position = 0;
-        return File(zipStream.ToArray(), "application/zip", $"{projectId}-mdx-export.zip");
+        return File(zipStream.ToArray(), "application/zip", $"{projectId}-html-export.zip");
     }
 
-    [HttpPost("export/mdx/commit")]
-    public async Task<IActionResult> CommitMdxExport(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
+    [HttpPost("export/html/commit")]
+    public async Task<IActionResult> CommitHtmlExport(Guid projectId, bool includeRevise = true, CancellationToken cancellationToken = default)
     {
         try
         {
             var result = await _commitService.CommitExportAsync(projectId, includeRevise, cancellationToken);
-            return Ok(new CommitMdxExportResponse(result.CommitSha, result.CommitUrl, result.FilePaths));
+            return Ok(new CommitHtmlExportResponse(result.CommitSha, result.CommitUrl, result.FilePaths));
         }
         catch (ContentGenerationException ex)
         {
@@ -69,4 +69,4 @@ public class ExportController : ControllerBase
     }
 }
 
-public sealed record CommitMdxExportResponse(string CommitSha, string CommitUrl, IReadOnlyList<string> FilePaths);
+public sealed record CommitHtmlExportResponse(string CommitSha, string CommitUrl, IReadOnlyList<string> FilePaths);

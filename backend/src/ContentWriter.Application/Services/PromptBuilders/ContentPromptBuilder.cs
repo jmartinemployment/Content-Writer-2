@@ -1,8 +1,10 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ContentWriter.Application.DTOs;
 using ContentWriter.Application.Providers;
 using ContentWriter.Application.Services;
+using ContentWriter.Domain.Entities;
 
 namespace ContentWriter.Application.Services.PromptBuilders;
 
@@ -11,6 +13,9 @@ public interface IContentPromptBuilder
     ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs);
 
     ChatCompletionRequest BuildArticleMetadataPrompt(ProjectGenerationContext context);
+
+    ChatCompletionRequest BuildArticleLedePrompt(ProjectGenerationContext context, ArticleMetadataDraft metadata);
+
     ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
@@ -26,12 +31,12 @@ public interface IContentPromptBuilder
         IReadOnlyList<string> faqQuestions,
         bool isRegeneration);
 
-    ChatCompletionRequest BuildArticleBodyPrompt(
-        ProjectGenerationContext context,
-        ArticleMetadataDraft metadata,
-        IReadOnlyList<string> faqQuestions,
-        bool isRegeneration = false);
     ChatCompletionRequest BuildBlogMetadataPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle);
+
+    ChatCompletionRequest BuildBlogBodyPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
+
+    ChatCompletionRequest BuildBlogLedePrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
+
     ChatCompletionRequest BuildBlogSectionPrompt(
         ProjectGenerationContext context,
         ArticleDraft sourceArticle,
@@ -39,12 +44,11 @@ public interface IContentPromptBuilder
         string sectionHeading,
         int sectionIndex,
         int totalSections);
-    ChatCompletionRequest BuildBlogBodyPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
     ChatCompletionRequest BuildBlogDepthExpansionPrompt(
         ProjectGenerationContext context,
         ArticleDraft sourceArticle,
         BlogMetadataDraft metadata,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount);
     ChatCompletionRequest BuildSocialPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string platform, string articleUrl);
     ChatCompletionRequest BuildColdOutreachPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string articleUrl);
@@ -66,25 +70,25 @@ public interface IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string bodyHtml);
+        ContentDocument body);
 
     ChatCompletionRequest BuildSummaryVariantsPrompt(
         ProjectGenerationContext context,
         string title,
-        string bodyHtml,
+        ContentDocument body,
         string? metaDescription,
         string contentTypeLabel);
 
     ChatCompletionRequest BuildToolWordCountExpansionPrompt(
         ProjectGenerationContext context,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount);
 
     ChatCompletionRequest BuildToolWordCountTrimPrompt(
         ProjectGenerationContext context,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount);
 }
 
@@ -92,6 +96,48 @@ public class ContentPromptBuilder : IContentPromptBuilder
 {
     private const string TopicFocusJsonContract =
         "{\"focus\": string[] (4-8 short topic phrases, 1-4 words each, describing the site's real services/subject matter — no generic filler words)}";
+
+    /// <summary>
+    /// The structured-output contract every section-body call uses instead of Markdown. No tag
+    /// characters, no "##"/"###"/"- "/"[text](url)" syntax — headings are a plain string field,
+    /// emphasis/links are boolean/url fields on a run, lists are their own paragraph variant. This
+    /// is what actually eliminates truncated/malformed markup and leaked Markdown habit: there is no
+    /// markup syntax available for the model to get wrong.
+    /// </summary>
+    private const string RunJsonShape =
+        "{\"text\": string (plain text only — never markup or Markdown syntax), \"bold\": boolean?, \"italic\": boolean?, \"href\": string?}";
+
+    private const string ParagraphJsonShape =
+        "{\"type\":\"text\",\"runs\":[" + RunJsonShape + ", ...]} " +
+        "OR {\"type\":\"list\",\"ordered\":boolean,\"items\":[[" + RunJsonShape + ", ...], ...]}";
+
+    private const string SectionJsonContract =
+        "{\"tag\": \"h2\"|\"h3\"|\"h4\"|\"h5\"|\"h6\", \"heading\": string (plain text, no markup), " +
+        "\"paragraphs\": [" + ParagraphJsonShape + ", ...], \"href\": null, " +
+        "\"children\": [Section, ...] (nested subsections, same shape, one level deeper tag)}";
+
+    private const string SectionsArrayJsonContract =
+        "{\"sections\": [" + SectionJsonContract + ", ...] (top-level h2 sections, in order)}";
+
+    private const string LedeJsonContract =
+        "{\"ledeType\": \"creative\"|\"summary\", \"heading\": string (a real written headline — never the literal words \"Creative Lead\"/\"Summary Lede\"), " +
+        "\"paragraphs\": [" + ParagraphJsonShape + ", ...]}";
+
+    private static ChatCompletionRequest WithSectionSchema(ChatCompletionRequest request) =>
+        ContentSectionJsonSchema.SectionSchema is { } schema
+            ? request with { JsonSchemaName = "section", JsonSchema = schema }
+            : request;
+
+    private static readonly JsonSerializerOptions ExpansionSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new ParagraphJsonConverter() },
+    };
+
+    private static string SerializeForExpansion(Section section) =>
+        JsonSerializer.Serialize(section, ExpansionSerializerOptions);
+
+    private static string SerializeSectionsForExpansion(IReadOnlyList<Section> sections) =>
+        JsonSerializer.Serialize(sections, ExpansionSerializerOptions);
 
     public ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs)
     {
@@ -165,6 +211,30 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1536);
     }
 
+    public ChatCompletionRequest BuildArticleLedePrompt(ProjectGenerationContext context, ArticleMetadataDraft metadata)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine("Write the opening lede for a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
+            .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
+            .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
+            .AppendLine("Do NOT start with \"How\" or a question. 2-3 paragraphs: context and thesis for the article.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine(LedeJsonContract)
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Article title: {metadata.Title}")
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Meta description: {metadata.MetaDescription}")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.65,
+            MaxOutputTokens: 1024);
+    }
+
     public ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
@@ -175,7 +245,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
         bool isRegeneration)
     {
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
-        var isFirst = sectionIndex == 0;
         var isTools = PillarSectionClassifier.IsToolsSection(sectionHeading);
         var isBestPractices = PillarSectionClassifier.IsBestPracticesSection(sectionHeading);
         var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
@@ -184,11 +253,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine("Write ONE section of a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
             .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
-            .AppendLine("Output ONLY GitHub-Flavored Markdown for this section. No JSON. No code fences wrapping the output.")
-            .AppendLine(isFirst
-                ? "Start with 2-3 introductory paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then \"## \" for this section."
-                : "Start with \"## \" for this section only — no intro paragraphs.")
-            .AppendLine("Include 2-3 \"### \" subsections with multiple paragraphs and at least one \"- \" bullet list where appropriate.")
+            .AppendLine("Respond with ONLY a single valid JSON Section object for this section — no markdown fences, no commentary, no other sections.")
+            .AppendLine(SectionJsonContract)
+            .AppendLine("This section's own tag is \"h2\". Do NOT write introductory paragraphs before it — the opening lede is generated separately.")
+            .AppendLine("Include 2-3 h3 subsections nested in \"children\" with multiple text paragraphs, and at least one list paragraph where appropriate.")
             .AppendLine("Do not write this as a neutral textbook explainer of the general subject — every subsection should be framed through what an AI implementation " +
                 $"consultancy like {context.PublisherName} ({context.ImplementerPositioning}) actually does about the problem being discussed, not just background education on it. " +
                 "A reader should finish the section understanding a consultancy's specific angle on it, not just the general concept.")
@@ -232,10 +300,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(outlineContext)
             .ToString();
 
-        return new ChatCompletionRequest(
+        return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: isRegeneration ? 0.72 : 0.65,
-            MaxOutputTokens: isTools ? 4096 : 2048);
+            MaxOutputTokens: isTools ? 4096 : 2048));
     }
 
     public ChatCompletionRequest BuildArticleFaqSectionPrompt(
@@ -249,8 +317,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine("Write ONLY the \"People Also Ask\" FAQ section of a TechnicalArticle pillar.")
-            .AppendLine("Start with \"## People Also Ask\". Each question is a \"### \" heading followed by a 2-4 sentence answer paragraph.")
-            .AppendLine("Direct, factual answers. Third person. GitHub-Flavored Markdown only. No JSON.")
+            .AppendLine("Respond with ONLY a single valid JSON Section object — no markdown fences, no commentary.")
+            .AppendLine(SectionJsonContract)
+            .AppendLine("This section's tag is \"h2\" and heading is exactly \"People Also Ask\". Each question is a child Section: tag \"h3\", heading is the question verbatim, paragraphs holds a 2-4 sentence answer.")
+            .AppendLine("Direct, factual answers. Third person.")
             .AppendLine($"Answers must sound like {context.PublisherName} ({context.ImplementerPositioning}), not a generic textbook FAQ — reflect the same consultative brand voice as the rest of the article, not interchangeable boilerplate.")
             .ToString();
 
@@ -270,69 +340,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(paaBlock)
             .ToString();
 
-        return new ChatCompletionRequest(
+        return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: isRegeneration ? 0.7 : 0.6,
-            MaxOutputTokens: 3072);
-    }
-
-    public ChatCompletionRequest BuildArticleBodyPrompt(
-        ProjectGenerationContext context,
-        ArticleMetadataDraft metadata,
-        IReadOnlyList<string> faqQuestions,
-        bool isRegeneration = false)
-    {
-        var outline = metadata.SectionOutline.Count > 0
-            ? string.Join("\n", metadata.SectionOutline.Select((h, i) => $"{i + 1}. {h}"))
-            : "(no outline provided — use strong declarative H2 structure)";
-
-        var paaBlock = faqQuestions.Count > 0
-            ? string.Join("\n", faqQuestions.Select((q, i) => $"  - Q{i + 1}: {q}"))
-            : "  (none provided)";
-
-        var system = new StringBuilder()
-            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine($"Detected brand tone: {context.DetectedTone}.")
-            .AppendLine($"Detected site focus/topics: {context.DetectedFocus}.")
-            .AppendLine("Content type: schema.org TechnicalArticle — a deep technical pillar, NOT a BlogPosting or FAQ page.")
-            .AppendLine($"Editorial standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
-            .AppendLine("Write an authoritative pillar article. Tone: third person, expert, consultative — write like a senior consultant advising a prospective client, not a marketing blog.")
-            .AppendLine("ANTI-PATTERNS (do NOT do these): first/second person blog voice; short 2-sentence sections; question-mark H2s outside the FAQ section; turning the whole article into Q&A; generic industry commentary that could apply to any AI vendor.")
-            .AppendLine($"CONCRETE EXAMPLES REQUIRED: at least one main section must include a specific example, brief case-study-style scenario, or concrete client-problem-to-outcome illustration of how {context.PublisherName} ({context.ImplementerPositioning}) solves problems related to {context.TargetKeyword} — not just industry facts about the topic in general.")
-            .AppendLine("REQUIRED STRUCTURE:")
-            .AppendLine("  1. Opening: 2-3 paragraphs before the first \"## \" heading (context, problem, thesis).")
-            .AppendLine("  2. Main \"## \" sections (from outline, excluding FAQ): each with multiple \"### \" subsections, 3+ paragraphs, and at least one \"- \" bullet list where appropriate.")
-            .AppendLine($"  3. Final \"## People Also Ask\" only: each FAQ as a \"### \" heading + 2-4 sentence answer paragraph, written in the same consultative brand voice as the rest of the article — not generic textbook answers. FAQ must NOT appear earlier in the article.")
-            .AppendLine("Ground factual claims in AUTHORITATIVE SOURCES — paraphrase and attribute where appropriate.")
-            .AppendLine($"Target at least {ContentLengthTargets.PillarMinWords:N0} words (aim for {ContentLengthTargets.PillarTargetMinWords:N0}-{ContentLengthTargets.PillarTargetMaxWords:N0}). Do not stop early.")
-            .AppendLine("Respond with ONLY GitHub-Flavored Markdown. No JSON wrapper. No code fences wrapping the output.")
-            .ToString();
-
-        if (isRegeneration)
-        {
-            system += Environment.NewLine +
-                      "This is a REGENERATION: keep the same outline topics but write substantially new prose, examples, and section openings. Do not reuse prior phrasing.";
-        }
-
-        var user = new StringBuilder()
-            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleBody,
-                $"Write the full pillar article body for {context.PublisherName}. Target keyword: \"{context.TargetKeyword}\"."))
-            .AppendLine()
-            .AppendLine($"Title: {metadata.Title}")
-            .AppendLine($"Meta description: {metadata.MetaDescription}")
-            .AppendLine($"Keywords: {string.Join(", ", metadata.Keywords)}")
-            .AppendLine()
-            .AppendLine("Section outline (mandatory H2 order — declarative headings except the FAQ section):")
-            .AppendLine(outline)
-            .AppendLine()
-            .AppendLine("People Also Ask questions (answer under the final H2 as H3 + paragraph each):")
-            .AppendLine(paaBlock)
-            .ToString();
-
-        return new ChatCompletionRequest(
-            Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
-            Temperature: isRegeneration ? 0.75 : 0.65,
-            MaxOutputTokens: 8192);
+            MaxOutputTokens: 3072));
     }
 
     private const string BlogMetadataJsonContract =
@@ -365,6 +376,30 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1536);
     }
 
+    public ChatCompletionRequest BuildBlogLedePrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine($"Detected brand tone: {context.DetectedTone}.")
+            .AppendLine("Write the opening lede for a schema.org BlogPosting deep-dive — conversational but substantive; first/second person allowed.")
+            .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
+            .AppendLine("2-3 paragraphs: hook, stakes, and who this is for.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine(LedeJsonContract)
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Pillar title (reference only): {sourceArticle.Title}")
+            .AppendLine($"Blog title: {metadata.Title}")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.7,
+            MaxOutputTokens: 1024);
+    }
+
     public ChatCompletionRequest BuildBlogSectionPrompt(
         ProjectGenerationContext context,
         ArticleDraft sourceArticle,
@@ -374,7 +409,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
         int totalSections)
     {
         var outlineContext = string.Join("\n", metadata.SectionOutline.Select((h, i) => $"{i + 1}. {h}"));
-        var isFirst = sectionIndex == 0;
         var isLast = sectionIndex == totalSections - 1;
 
         var system = new StringBuilder()
@@ -382,11 +416,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Detected brand tone: {context.DetectedTone}.")
             .AppendLine("Write ONE section of a schema.org BlogPosting deep-dive article — conversational but substantive; first/second person allowed.")
             .AppendLine($"Editorial standard ({ContentLengthTargets.BlogRangeLabel} words): {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Output ONLY GitHub-Flavored Markdown for this section. No JSON. No code fences wrapping the output.")
-            .AppendLine(isFirst
-                ? "Start with 2-3 introductory paragraphs (hook, stakes, and who this is for). Then \"## \" for this section."
-                : "Start with \"## \" for this section only — no intro paragraphs.")
-            .AppendLine("Include 2-3 \"### \" subsections where helpful, multiple substantive paragraphs, at least one \"- \" bullet list with concrete tips, and a specific example or data point.")
+            .AppendLine("Respond with ONLY a single valid JSON Section object for this section — no markdown fences, no commentary, no other sections.")
+            .AppendLine(SectionJsonContract)
+            .AppendLine("This section's own tag is \"h2\". Do NOT write introductory paragraphs before it — the opening lede is generated separately.")
+            .AppendLine("Include 2-3 h3 subsections nested in \"children\" where helpful, multiple substantive paragraphs, at least one list paragraph with concrete tips, and a specific example or data point.")
             .AppendLine($"Target {ContentLengthTargets.BlogSectionMinWords}-{ContentLengthTargets.BlogSectionTargetMaxWords} words for this section alone. Shorter sections fail editorial review — add depth, not filler.")
             .AppendLine("Do NOT duplicate the pillar article structure or reuse its H2 headings verbatim.")
             .ToString();
@@ -394,7 +427,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         if (isLast)
         {
             system += Environment.NewLine +
-                      $"End with a CTA <p> linking readers to the full technical pillar for implementation depth (use placeholder anchor text only — no href URL). Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
+                      $"End with a paragraph CTA linking readers to the full technical pillar for implementation depth (use placeholder anchor text only — no href url). Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
         }
 
         var user = new StringBuilder()
@@ -407,27 +440,28 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(outlineContext)
             .ToString();
 
-        return new ChatCompletionRequest(
+        return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: 0.72,
-            MaxOutputTokens: 4096);
+            MaxOutputTokens: 4096));
     }
 
     public ChatCompletionRequest BuildBlogDepthExpansionPrompt(
         ProjectGenerationContext context,
         ArticleDraft sourceArticle,
         BlogMetadataDraft metadata,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount)
     {
         var wordsNeeded = ContentLengthTargets.BlogMinWords - currentWordCount;
         var system = new StringBuilder()
             .AppendLine("You are a senior content editor for an IT consulting firm.")
-            .AppendLine("Expand the blog Markdown below to meet the minimum word count without changing the title or removing existing sections.")
+            .AppendLine("Expand the blog sections below to meet the minimum word count without changing the title or removing existing sections.")
             .AppendLine($"Editorial standard: {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Add depth inside each \"## \" section: more paragraphs, an extra \"### \" subsection, examples, and a bullet list where appropriate.")
+            .AppendLine("Add depth inside each section: more paragraphs, an extra h3 child subsection, examples, and a list paragraph where appropriate.")
             .AppendLine($"Current length: {currentWordCount:N0} words. Minimum required: {ContentLengthTargets.BlogMinWords:N0}. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
-            .AppendLine("Respond with ONLY the full expanded Markdown body. No JSON wrapper. No code fences wrapping the output.")
+            .AppendLine("Respond with ONLY the full expanded sections array — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
             .ToString();
 
         var user = new StringBuilder()
@@ -435,8 +469,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Blog title: {metadata.Title}")
             .AppendLine($"Pillar reference: {sourceArticle.Title}")
             .AppendLine()
-            .AppendLine("Current Markdown to expand:")
-            .AppendLine(currentBodyHtml)
+            .AppendLine("Current sections (JSON) to expand:")
+            .AppendLine(SerializeSectionsForExpansion(currentSections))
             .ToString();
 
         return new ChatCompletionRequest(
@@ -455,9 +489,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine($"Detected brand tone: {context.DetectedTone}.")
             .AppendLine("Write a deep-dive blog that teases the pillar — do NOT duplicate the pillar structure or reuse its H2 headings verbatim.")
-            .AppendLine("Use fresh \"## \" headings (5-6 sections). Substantive paragraphs with examples; first/second person allowed.")
+            .AppendLine("Use fresh headings (5-6 top-level sections). Substantive paragraphs with examples; first/second person allowed.")
             .AppendLine($"Target at least {ContentLengthTargets.BlogMinWords:N0} words (aim for {ContentLengthTargets.BlogRangeLabel}). Do not stop early.")
-            .AppendLine("Respond with ONLY GitHub-Flavored Markdown. No JSON wrapper. No code fences wrapping the output.")
+            .AppendLine("Respond with ONLY the sections array — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
             .ToString();
 
         var user = new StringBuilder()
@@ -469,7 +504,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Blog title: {metadata.Title}")
             .AppendLine($"Blog meta description: {metadata.MetaDescription}")
             .AppendLine()
-            .AppendLine("Write the blog body. Summarize 2-3 key takeaways, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
+            .AppendLine("Write the blog body sections. Summarize 2-3 key takeaways, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
             .ToString();
 
         return new ChatCompletionRequest(
@@ -610,11 +645,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var system = new StringBuilder()
             .AppendLine("You are a senior technical writer for an IT consulting firm.")
             .AppendLine($"Editorial standard: {ContentLengthTargets.ToolEditorialDefinition}")
-            .AppendLine("Write a tool overview page as GitHub-Flavored Markdown only (no JSON wrapper, no code fences wrapping the output).")
+            .AppendLine("Respond with ONLY the sections array for this tool overview page — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
             .AppendLine("This page is published with schema.org SoftwareApplication metadata — expert technical tone, not breaking news.")
-            .AppendLine("Use \"## \" for main sections and \"### \" for subsections with multiple paragraphs.")
-            .AppendLine("Start at the first \"## \" heading — no introductory paragraphs before it.")
-            .AppendLine("Required \"## \" sections: Overview, Key Capabilities, Implementation Considerations, When to Use.")
+            .AppendLine("No introductory paragraphs before the first section.")
+            .AppendLine("Required top-level (h2) sections, in order: Overview, Key Capabilities, Implementation Considerations, When to Use.")
             .AppendLine($"Target at least {ContentLengthTargets.ToolMinWords:N0} words (aim for {ContentLengthTargets.ToolTargetMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0}). Hard maximum {ContentLengthTargets.ToolHardMaxWords:N0}. Do not stop early.")
             .AppendLine($"Only describe real, verifiable capabilities of {app.Name} — never invent a feature, integration, or claim to fill space.")
             .AppendLine($"Implementation Considerations must not be generic industry advice — cover, made concrete to {app.Name} specifically:")
@@ -646,7 +681,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string bodyHtml)
+        ContentDocument body)
     {
         var system = new StringBuilder()
             .AppendLine("You write presentation metadata for a B2B tool overview page (schema.org SoftwareApplication).")
@@ -661,7 +696,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Tool name: {app.Name}")
             .AppendLine()
             .AppendLine("Tool page body (for context):")
-            .AppendLine(StripHtmlExcerpt(bodyHtml, 2000))
+            .AppendLine(TruncateExcerpt(ContentDocumentText.Flatten(body), 2000))
             .ToString();
 
         return new ChatCompletionRequest(
@@ -676,7 +711,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     public ChatCompletionRequest BuildSummaryVariantsPrompt(
         ProjectGenerationContext context,
         string title,
-        string bodyHtml,
+        ContentDocument body,
         string? metaDescription,
         string contentTypeLabel)
     {
@@ -693,7 +728,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Meta description (do not repeat this wording): {metaDescription ?? "N/A"}")
             .AppendLine()
             .AppendLine("Page body (for context):")
-            .AppendLine(StripHtmlExcerpt(bodyHtml, 2000))
+            .AppendLine(TruncateExcerpt(ContentDocumentText.Flatten(body), 2000))
             .ToString();
 
         return new ChatCompletionRequest(
@@ -705,14 +740,15 @@ public class ContentPromptBuilder : IContentPromptBuilder
     public ChatCompletionRequest BuildToolWordCountExpansionPrompt(
         ProjectGenerationContext context,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount)
     {
         var wordsNeeded = ContentLengthTargets.ToolMinWords - currentWordCount;
         var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Expand the tool page Markdown to meet the minimum word count.")
-            .AppendLine("Return ONLY the full revised Markdown body — no JSON, no code fences wrapping the output.")
-            .AppendLine("Preserve all existing \"## \" section headings and structure; add substantive depth under each section.")
+            .AppendLine("You are a senior technical writer. Expand the tool page sections below to meet the minimum word count.")
+            .AppendLine("Respond with ONLY the full revised sections array — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
+            .AppendLine("Preserve all existing section headings and structure; add substantive depth under each section.")
             .AppendLine($"Minimum required: {ContentLengthTargets.ToolMinWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .ToString();
 
@@ -721,8 +757,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Current length: {currentWordCount:N0} words. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
             .AppendLine()
-            .AppendLine("Current Markdown:")
-            .AppendLine(currentBodyHtml)
+            .AppendLine("Current sections (JSON):")
+            .AppendLine(SerializeSectionsForExpansion(currentSections))
             .ToString();
 
         return new ChatCompletionRequest(
@@ -734,13 +770,14 @@ public class ContentPromptBuilder : IContentPromptBuilder
     public ChatCompletionRequest BuildToolWordCountTrimPrompt(
         ProjectGenerationContext context,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string currentBodyHtml,
+        IReadOnlyList<Section> currentSections,
         int currentWordCount)
     {
         var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Trim the tool page Markdown to meet the maximum word count.")
-            .AppendLine("Return ONLY the full revised Markdown body — no JSON, no code fences wrapping the output.")
-            .AppendLine("Preserve all existing \"## \" section headings; tighten prose without losing key facts.")
+            .AppendLine("You are a senior technical writer. Trim the tool page sections below to meet the maximum word count.")
+            .AppendLine("Respond with ONLY the full revised sections array — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
+            .AppendLine("Preserve all existing section headings; tighten prose without losing key facts.")
             .AppendLine($"Target range: {ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .ToString();
 
@@ -749,8 +786,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Current length: {currentWordCount:N0} words — trim to at most {ContentLengthTargets.ToolHardMaxWords:N0} words.")
             .AppendLine()
-            .AppendLine("Current Markdown:")
-            .AppendLine(currentBodyHtml)
+            .AppendLine("Current sections (JSON):")
+            .AppendLine(SerializeSectionsForExpansion(currentSections))
             .ToString();
 
         return new ChatCompletionRequest(
@@ -759,14 +796,13 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 8192);
     }
 
-    private static string StripHtmlExcerpt(string html, int maxChars)
+    private static string TruncateExcerpt(string text, int maxChars)
     {
-        if (string.IsNullOrWhiteSpace(html))
+        if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
 
-        var text = Regex.Replace(html, "<[^>]+>", " ");
-        text = Regex.Replace(text, @"\s+", " ").Trim();
-        return text.Length <= maxChars ? text : text[..maxChars].TrimEnd() + "…";
+        var normalized = Regex.Replace(text, @"\s+", " ").Trim();
+        return normalized.Length <= maxChars ? normalized : normalized[..maxChars].TrimEnd() + "…";
     }
 
     private static string BuildToolsSectionGuidance(ProjectGenerationContext context)
@@ -775,22 +811,20 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("TOOLS SECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
             .AppendLine("Cover 4-6 major platforms or tools relevant to the target keyword — only real, verifiable, well-known products. Never invent a tool name, vendor, feature, or capability; if unsure a feature exists, describe it generically instead of naming it.")
-            .AppendLine("For EACH platform use this Markdown pattern (heading levels matter — do not deviate):")
-            .AppendLine("  ### {Platform name}")
-            .AppendLine("  Brief overview of what the platform does for this use case.")
-            .AppendLine("  - 2-4 factual capability bullets")
-            .AppendLine("  #### How an AI implementer helps with {Platform}")
-            .AppendLine("  REQUIRED: cover all four of these mechanisms, each made concrete to THIS specific platform (not generic filler, not just Salesforce-flavored jargon reused for every platform):")
+            .AppendLine("For EACH platform, add a child Section (tag h3, heading = platform name) under this Tools section:")
+            .AppendLine("  - Its own paragraphs: a brief overview of what the platform does for this use case, then a list paragraph with 2-4 factual capability bullets.")
+            .AppendLine("  - One further child Section (tag h4, heading \"How an AI implementer helps with {Platform}\") nested under it.")
+            .AppendLine("  REQUIRED in that h4 child's paragraphs: cover all four of these mechanisms, each made concrete to THIS specific platform (not generic filler, not just Salesforce-flavored jargon reused for every platform):")
             .AppendLine("    1. Accelerated deployment — what specifically shortens go-live for {Platform} (e.g. pre-built connectors, templated setup, phased rollout plan).")
             .AppendLine("    2. Data model design — what {Platform}-specific data structure/mapping decisions an implementer gets right upfront (e.g. chart-of-accounts mapping, vendor master data, GL coding schema).")
             .AppendLine("    3. Workflow/process configuration — what {Platform}-specific approval chains, routing rules, or automation logic get configured.")
             .AppendLine("    4. Custom code/development — what {Platform}-specific extension mechanism exists if the platform supports one (its own scripting/API/SDK layer, e.g. custom connectors, API integrations, scripted validation rules); if {Platform} genuinely has no such layer, say so plainly instead of inventing one — don't force this point for a platform that's config-only.")
             .AppendLine("  Keep each of the 4 points to ONE tight sentence — do not write a full paragraph per point or restate the platform overview/capability bullets above. ")
-            .AppendLine("  Do not use a numbered \"1. **Label**: ...\" list for this — write it as flowing prose covering all four, so it doesn't read as a mechanical template repeated per platform.")
+            .AppendLine("  Write it as flowing prose (a single text paragraph) covering all four, not a numbered list — so it doesn't read as a mechanical template repeated per platform.")
             .AppendLine("  Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation. Vary the language and sentence structure between platforms — do not reuse the same phrasing for each one.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
             .AppendLine($"Target {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words for this Tools section (longer than other sections).")
-            .AppendLine("Each platform <h3> should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
+            .AppendLine("Each platform h3 child should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
             .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
                 "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
             .ToString();

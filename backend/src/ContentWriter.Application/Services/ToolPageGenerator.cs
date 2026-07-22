@@ -46,7 +46,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         string pillarArticleUrl,
         CancellationToken cancellationToken = default)
     {
-        var extraction = ToolsSectionHtmlParser.DiagnoseExtraction(articleRow.BodyHtml, metadata.SectionOutline);
+        var extraction = ToolSectionExtractor.DiagnoseExtraction(articleRow.Body, metadata.SectionOutline);
         if (extraction.Outcome != ToolGenerationOutcome.Success)
         {
             return new ToolGenerationResult(extraction.Outcome, []);
@@ -66,11 +66,14 @@ public sealed class ToolPageGenerator : IToolPageGenerator
                 slot.App, slot.Slug, slot.Order, cancellationToken))))
             .ToList();
 
-        articleRow.BodyHtml = ToolsSectionHtmlParser.InjectToolLinks(
-            articleRow.BodyHtml,
-            metadata.SectionOutline,
-            $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}",
-            rows.Select(r => (r.SourceAppName!, r.Slug)).ToList());
+        if (articleRow.Body is not null)
+        {
+            articleRow.Body = ToolSectionExtractor.InjectToolLinks(
+                articleRow.Body,
+                metadata.SectionOutline,
+                $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}",
+                rows.Select(r => (r.SourceAppName!, r.Slug)).ToList());
+        }
 
         return new ToolGenerationResult(ToolGenerationOutcome.Success, rows);
     }
@@ -88,13 +91,13 @@ public sealed class ToolPageGenerator : IToolPageGenerator
     {
         var toolUrl = $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}/{slug}";
 
-        var bodyHtml = await GenerateToolBodyWithValidationAsync(
+        var document = await GenerateToolBodyWithValidationAsync(
             provider, context, metadata, app, slug, cancellationToken);
 
         var toolMetadata = await GenerateToolMetadataAsync(
-            provider, context, metadata, app, bodyHtml, cancellationToken);
+            provider, context, metadata, app, document, cancellationToken);
 
-        var wordCount = HtmlWordCounter.Count(bodyHtml);
+        var wordCount = ContentDocumentText.CountWords(document);
         var displayTitle = app.Name.Trim();
         var now = DateTime.UtcNow;
         var schemaMeta = new ContentMetadata(
@@ -130,7 +133,8 @@ public sealed class ToolPageGenerator : IToolPageGenerator
             MetaDescription = toolMetadata.MetaDescription.Length > 160
                 ? toolMetadata.MetaDescription[..160]
                 : toolMetadata.MetaDescription,
-            BodyHtml = bodyHtml,
+            Body = document,
+            LedeType = Domain.Entities.LedeType.Summary,
             JsonLdSchema = string.IsNullOrWhiteSpace(jsonLd) ? "{}" : jsonLd,
             RelatedArticleUrl = pillarArticleUrl,
             SourceAppName = app.Name,
@@ -146,14 +150,14 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
         SoftwareApplicationDescriptor app,
-        string bodyHtml,
+        ContentDocument document,
         CancellationToken cancellationToken)
     {
         const int maxAttempts = 2;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             var result = await provider.CompleteAsync(
-                _promptBuilder.BuildToolMetadataPrompt(context, pillarMetadata, app, bodyHtml),
+                _promptBuilder.BuildToolMetadataPrompt(context, pillarMetadata, app, document),
                 cancellationToken);
             try
             {
@@ -169,7 +173,9 @@ public sealed class ToolPageGenerator : IToolPageGenerator
             $"Model did not return valid JSON for tool metadata for '{app.Name}' after {maxAttempts} attempts.");
     }
 
-    private async Task<string> GenerateToolBodyWithValidationAsync(
+    /// <summary>Generates the tool page as a sections array; the first section (always "Overview")
+    /// becomes the document's lede, the rest become its top-level sections.</summary>
+    private async Task<ContentDocument> GenerateToolBodyWithValidationAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
@@ -180,20 +186,20 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         var result = await provider.CompleteAsync(
             _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug),
             cancellationToken);
-        var bodyHtml = LlmResponseJsonParser.ParseHtmlBody(result.Content, $"tool page '{app.Name}'");
-        var wordCount = HtmlWordCounter.Count(bodyHtml);
+        var sections = LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'");
+        var wordCount = ContentDocumentText.CountWords(sections);
 
         const int maxExpansionPasses = 3;
         for (var pass = 0; wordCount < ContentLengthTargets.ToolMinWords && pass < maxExpansionPasses; pass++)
         {
             var expansion = await provider.CompleteAsync(
-                _promptBuilder.BuildToolWordCountExpansionPrompt(context, app, bodyHtml, wordCount),
+                _promptBuilder.BuildToolWordCountExpansionPrompt(context, app, sections, wordCount),
                 cancellationToken);
-            var expanded = LlmResponseJsonParser.ParseHtmlBody(expansion.Content, $"tool page expansion '{app.Name}'");
-            var expandedCount = HtmlWordCounter.Count(expanded);
+            var expanded = LlmResponseJsonParser.ParseSections(expansion.Content, $"tool page expansion '{app.Name}'");
+            var expandedCount = ContentDocumentText.CountWords(expanded);
             if (expandedCount > wordCount)
             {
-                bodyHtml = expanded;
+                sections = expanded;
                 wordCount = expandedCount;
             }
         }
@@ -201,13 +207,13 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         if (wordCount > ContentLengthTargets.ToolHardMaxWords)
         {
             var trim = await provider.CompleteAsync(
-                _promptBuilder.BuildToolWordCountTrimPrompt(context, app, bodyHtml, wordCount),
+                _promptBuilder.BuildToolWordCountTrimPrompt(context, app, sections, wordCount),
                 cancellationToken);
-            var trimmed = LlmResponseJsonParser.ParseHtmlBody(trim.Content, $"tool page trim '{app.Name}'");
-            var trimmedCount = HtmlWordCounter.Count(trimmed);
+            var trimmed = LlmResponseJsonParser.ParseSections(trim.Content, $"tool page trim '{app.Name}'");
+            var trimmedCount = ContentDocumentText.CountWords(trimmed);
             if (trimmedCount < wordCount)
             {
-                bodyHtml = trimmed;
+                sections = trimmed;
                 wordCount = trimmedCount;
             }
         }
@@ -219,6 +225,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
                 $"{ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolHardMaxWords:N0}.");
         }
 
-        return HtmlBodyNormalizer.Normalize(bodyHtml);
+        var lede = sections[0] with { Tag = "h2" };
+        return new ContentDocument(lede, sections.Skip(1).ToList());
     }
 }

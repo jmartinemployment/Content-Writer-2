@@ -80,7 +80,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             Keywords = metadata.Keywords,
             SectionOutline = metadata.SectionOutline,
             WordCount = 0,
-            BodyHtml = string.Empty,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
         }, cancellationToken);
@@ -104,14 +103,14 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             articleRow.SectionOutline = bodyMetadata.SectionOutline;
         }
 
-        var isRegeneration = !string.IsNullOrWhiteSpace(articleRow.BodyHtml) && articleRow.WordCount > 0;
+        var isRegeneration = articleRow.Body is not null && articleRow.WordCount > 0;
 
         _logger.LogInformation(
             "Generating pillar body for project {ProjectId} via {Provider} (regeneration={IsRegeneration}, faqCount={FaqCount})",
             projectId, provider.ProviderType, isRegeneration, faqQuestions.Count);
 
-        var bodyHtml = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, cancellationToken);
-        var wordCount = HtmlWordCounter.Count(bodyHtml);
+        var (document, ledeType) = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, cancellationToken);
+        var wordCount = ContentDocumentText.CountWords(document);
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
 
@@ -119,8 +118,9 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var articleMetadata = new ContentMetadata(
             metadata.Title, metadata.MetaDescription, context.AuthorName, context.PublisherName,
             context.PublisherLogoUrl, articleUrl, context.PublisherLogoUrl, now, now, metadata.Keywords, wordCount);
-        var softwareApplications = ToolsSectionHtmlParser.ExtractApplications(bodyHtml, metadata.SectionOutline);
-        articleRow.BodyHtml = bodyHtml;
+        var softwareApplications = ToolSectionExtractor.ExtractApplications(document, metadata.SectionOutline);
+        articleRow.Body = document;
+        articleRow.LedeType = ledeType;
         articleRow.WordCount = wordCount;
         articleRow.JsonLdSchema = _articleSchemaBuilder.Build(articleMetadata, placeholderBlogUrl, softwareApplications);
         articleRow.RelatedArticleUrl = placeholderBlogUrl;
@@ -128,7 +128,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         articleRow.GeneratedByModel = ResolveModelName(project.PreferredProvider);
 
         var summaryVariants = await GenerateSummaryVariantsAsync(
-            provider, context, metadata.Title, bodyHtml, metadata.MetaDescription, "pillar", cancellationToken);
+            provider, context, metadata.Title, document, metadata.MetaDescription, "pillar", cancellationToken);
         articleRow.Summary = summaryVariants.Summary;
         articleRow.MainSummary = summaryVariants.MainSummary;
         articleRow.HeroSummary = summaryVariants.HeroSummary;
@@ -199,7 +199,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
 
-        var blog = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
+        var (blog, ledeType) = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
         var blogSlug = SlugHelper.Slugify(blog.Title);
         var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
 
@@ -212,12 +212,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var articleMetadata = new ContentMetadata(
             article.Title, article.MetaDescription, context.AuthorName, context.PublisherName,
             context.PublisherLogoUrl, articleUrl, context.PublisherLogoUrl, now, now, article.Keywords, article.WordCount);
-        var softwareApplications = ToolsSectionHtmlParser.ExtractApplications(articleRow.BodyHtml, article.SectionOutline);
+        var softwareApplications = ToolSectionExtractor.ExtractApplications(articleRow.Body, article.SectionOutline);
         articleRow.JsonLdSchema = _articleSchemaBuilder.Build(articleMetadata, blogUrl, softwareApplications);
         articleRow.RelatedArticleUrl = blogUrl;
 
         var summaryVariants = await GenerateSummaryVariantsAsync(
-            provider, context, blog.Title, blog.BodyHtml, blog.MetaDescription, "blog", cancellationToken);
+            provider, context, blog.Title, blog.Body, blog.MetaDescription, "blog", cancellationToken);
 
         await AddContentAsync(project, provider.ProviderType, new GeneratedContent
         {
@@ -229,7 +229,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             Keywords = blog.Keywords,
             WordCount = blog.WordCount,
             SectionOutline = blog.SectionOutline,
-            BodyHtml = blog.BodyHtml,
+            Body = blog.Body,
+            LedeType = ledeType,
             JsonLdSchema = blogJsonLd,
             RelatedArticleUrl = articleUrl,
             Summary = summaryVariants.Summary,
@@ -269,7 +270,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ContentType = GeneratedContentType.SocialFacebook,
             Title = $"{article.Title} (Facebook)",
             Slug = $"{articleRow.Slug}-facebook",
-            BodyHtml = facebook.Text,
+            Body = ContentDocumentText.FromPlainText(facebook.Text),
             RelatedArticleUrl = articleUrl,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
@@ -281,7 +282,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ContentType = GeneratedContentType.SocialLinkedIn,
             Title = $"{article.Title} (LinkedIn)",
             Slug = $"{articleRow.Slug}-linkedin",
-            BodyHtml = linkedIn.Text,
+            Body = ContentDocumentText.FromPlainText(linkedIn.Text),
             RelatedArticleUrl = articleUrl,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
@@ -336,7 +337,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ContentType = GeneratedContentType.EmailColdOutreach,
             Title = draft.Subject,
             Slug = $"{articleRow.Slug}-cold-outreach",
-            BodyHtml = draft.BodyText,
+            Body = ContentDocumentText.FromPlainText(draft.BodyText),
             MetaDescription = draft.CtaLabel,
             RelatedArticleUrl = articleUrl,
             WordCount = wordCount,
@@ -367,16 +368,16 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             .Select(c => string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.Title : c.DisplayTitle!)
             .ToList();
 
-        var sections = ArticleHtmlSectionExtractor.BuildSectionTargets(
+        var sections = ContentDocumentText.BuildSectionTargets(
             articleRow.DisplayTitle ?? articleRow.Title,
-            articleRow.BodyHtml,
+            articleRow.Body,
             blogRow.DisplayTitle ?? blogRow.Title,
-            blogRow.BodyHtml,
+            blogRow.Body,
             toolTitles);
         if (sections.Count == 0)
         {
             throw new ContentGenerationException(
-                "Pillar and blog must each include at least one \"## \" section before generating image prompts.");
+                "Pillar and blog must each include at least one top-level section before generating image prompts.");
         }
 
         _logger.LogInformation(
@@ -469,7 +470,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var row = RequireGeneratedContent(project, GeneratedContentType.TechnicalArticle,
             "Generate the pillar plan and body (Steps 1–2) before continuing.");
 
-        if (string.IsNullOrWhiteSpace(row.BodyHtml) || row.WordCount < 200)
+        if (row.Body is null || row.WordCount < 200)
         {
             throw new ContentGenerationException("Generate the pillar body (Step 2) before continuing.");
         }
@@ -512,7 +513,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var row = RequireGeneratedContent(project, GeneratedContentType.BlogPost,
             "Generate the blog (Step 3) before image prompts.");
 
-        if (string.IsNullOrWhiteSpace(row.BodyHtml) || row.WordCount < 200)
+        if (row.Body is null || row.WordCount < 200)
         {
             throw new ContentGenerationException("Generate the blog (Step 3) before image prompts.");
         }
@@ -546,7 +547,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ContentType = contentType,
             Title = item.Heading,
             Slug = slug,
-            BodyHtml = item.Prompt,
+            Body = ContentDocumentText.FromPlainText(item.Prompt),
             MetaDescription = ImagePromptMetadata.Serialize(item),
             RelatedArticleUrl = articleUrl,
             WordCount = wordCount,
@@ -657,7 +658,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return PillarPlanMetadataNormalizer.Normalize(metadata, context.TargetKeyword);
     }
 
-    private async Task<string> GenerateArticleBodyAsync(
+    private async Task<(ContentDocument Document, LedeType LedeType)> GenerateArticleBodyAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
@@ -665,11 +666,17 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         bool isRegeneration,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Generating pillar lede");
+        var ledeResult = await provider.CompleteAsync(
+            _promptBuilder.BuildArticleLedePrompt(context, metadata),
+            cancellationToken);
+        var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "TechnicalArticle lede");
+
         var mainSections = metadata.SectionOutline
             .Where(s => !PillarOutlineNormalizer.IsFaqSectionTitle(s))
             .ToList();
 
-        var parts = new List<string>();
+        var sections = new List<Section>();
 
         for (var i = 0; i < mainSections.Count; i++)
         {
@@ -683,8 +690,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                     context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration),
                 cancellationToken);
 
-            parts.Add(LlmResponseJsonParser.ParseHtmlBody(
-                sectionResult.Content, $"TechnicalArticle section '{heading}'"));
+            sections.Add(LlmResponseJsonParser.ParseSection(
+                sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'"));
         }
 
         if (faqQuestions.Count > 0)
@@ -695,11 +702,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 _promptBuilder.BuildArticleFaqSectionPrompt(context, metadata, faqQuestions, isRegeneration),
                 cancellationToken);
 
-            parts.Add(LlmResponseJsonParser.ParseHtmlBody(
-                faqResult.Content, "TechnicalArticle FAQ section"));
+            sections.Add(LlmResponseJsonParser.ParseSection(
+                faqResult.Content, "h2", "TechnicalArticle FAQ section"));
         }
 
-        return string.Join("\n\n", parts);
+        return (new ContentDocument(lede, sections), ledeType);
     }
 
     private static ArticleMetadataDraft SanitizePlanMetadata(
@@ -726,32 +733,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         SectionOutline = metadata.SectionOutline ?? new List<string>()
     };
 
-    private async Task<ArticleDraft> GenerateArticleAsync(
-        IContentGenerationProvider provider,
-        ProjectGenerationContext context,
-        CancellationToken cancellationToken)
-    {
-        var metadata = await GenerateArticleMetadataAsync(provider, context, cancellationToken);
-        var (_, faqQuestions) = PillarOutlineNormalizer.Sanitize(
-            metadata.SectionOutline, context.PeopleAlsoAskQuestions, context.TargetKeyword);
-        var bodyHtml = await GenerateArticleBodyAsync(
-            provider,
-            context,
-            metadata,
-            faqQuestions,
-            isRegeneration: false,
-            cancellationToken);
-
-        return new ArticleDraft(
-            metadata.Title,
-            metadata.MetaDescription,
-            bodyHtml,
-            metadata.Keywords,
-            HtmlWordCounter.Count(bodyHtml),
-            metadata.SectionOutline);
-    }
-
-    private async Task<BlogDraft> GenerateBlogDraftAsync(
+    private async Task<(BlogDraft Draft, LedeType LedeType)> GenerateBlogDraftAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleDraft article,
@@ -763,8 +745,14 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var metadata = NormalizeBlogMetadata(ParseJson<BlogMetadataDraft>(metadataResult.Content, "BlogPosting metadata"));
         metadata = EnsureBlogSectionOutline(metadata);
 
-        var bodyHtml = await GenerateBlogBodyAsync(provider, context, article, metadata, cancellationToken);
-        var wordCount = HtmlWordCounter.Count(bodyHtml);
+        _logger.LogInformation("Generating blog lede");
+        var ledeResult = await provider.CompleteAsync(
+            _promptBuilder.BuildBlogLedePrompt(context, article, metadata),
+            cancellationToken);
+        var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "BlogPosting lede");
+
+        var sections = await GenerateBlogBodyAsync(provider, context, article, metadata, cancellationToken);
+        var wordCount = ContentDocumentText.CountWords(sections);
 
         const int maxExpansionPasses = 3;
         for (var pass = 0; wordCount < ContentLengthTargets.BlogMinWords && pass < maxExpansionPasses; pass++)
@@ -780,29 +768,31 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             var expansionResult = await provider.CompleteAsync(
                 pass == 0
                     ? _promptBuilder.BuildBlogBodyPrompt(context, article, metadata)
-                    : _promptBuilder.BuildBlogDepthExpansionPrompt(context, article, metadata, bodyHtml, wordCount),
+                    : _promptBuilder.BuildBlogDepthExpansionPrompt(context, article, metadata, sections, wordCount),
                 cancellationToken);
-            var expandedHtml = LlmResponseJsonParser.ParseHtmlBody(
+            var expandedSections = LlmResponseJsonParser.ParseSections(
                 expansionResult.Content,
                 pass == 0 ? "BlogPosting expansion body" : "BlogPosting depth expansion");
-            var expandedCount = HtmlWordCounter.Count(expandedHtml);
+            var expandedCount = ContentDocumentText.CountWords(expandedSections);
             if (expandedCount > wordCount)
             {
-                bodyHtml = expandedHtml;
+                sections = expandedSections.ToList();
                 wordCount = expandedCount;
             }
         }
 
-        return new BlogDraft(
+        var draft = new BlogDraft(
             metadata.Title,
             metadata.MetaDescription,
-            bodyHtml,
+            new ContentDocument(lede, sections),
             metadata.Keywords,
             wordCount,
             metadata.SectionOutline);
+
+        return (draft, ledeType);
     }
 
-    private async Task<string> GenerateBlogBodyAsync(
+    private async Task<List<Section>> GenerateBlogBodyAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleDraft article,
@@ -821,7 +811,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 "What to read next"
             ];
 
-        var parts = new List<string>();
+        var parts = new List<Section>();
 
         for (var i = 0; i < sections.Count; i++)
         {
@@ -832,15 +822,15 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 sections.Count,
                 heading);
 
-            var sectionHtml = await GenerateBlogSectionWithRetryAsync(
+            var section = await GenerateBlogSectionWithRetryAsync(
                 provider, context, article, metadata, heading, i, sections.Count, cancellationToken);
-            parts.Add(sectionHtml);
+            parts.Add(section);
         }
 
-        return string.Join("\n\n", parts);
+        return parts;
     }
 
-    private async Task<string> GenerateBlogSectionWithRetryAsync(
+    private async Task<Section> GenerateBlogSectionWithRetryAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleDraft article,
@@ -851,6 +841,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         CancellationToken cancellationToken)
     {
         var sectionMin = (int)(ContentLengthTargets.BlogSectionMinWords * 0.85);
+        Section? bestSection = null;
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -858,12 +849,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections),
                 cancellationToken);
 
-            var sectionHtml = LlmResponseJsonParser.ParseHtmlBody(
-                sectionResult.Content,
-                $"BlogPosting section '{heading}'");
+            var section = LlmResponseJsonParser.ParseSection(
+                sectionResult.Content, "h2", $"BlogPosting section '{heading}'");
+            bestSection = section;
 
-            if (HtmlWordCounter.Count(sectionHtml) >= sectionMin || attempt == 1)
-                return sectionHtml;
+            if (ContentDocumentText.CountWords(section) >= sectionMin || attempt == 1)
+                return section;
 
             _logger.LogWarning(
                 "Blog section \"{Heading}\" is under {Minimum} words; retrying with stricter depth instructions.",
@@ -871,7 +862,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 sectionMin);
         }
 
-        return string.Empty;
+        return bestSection!;
     }
 
     private static BlogMetadataDraft EnsureBlogSectionOutline(BlogMetadataDraft metadata)
@@ -933,7 +924,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         string title,
-        string bodyHtml,
+        ContentDocument body,
         string? metaDescription,
         string contentTypeLabel,
         CancellationToken cancellationToken)
@@ -943,7 +934,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             var result = await provider.CompleteAsync(
-                _promptBuilder.BuildSummaryVariantsPrompt(context, title, bodyHtml, metaDescription, contentTypeLabel),
+                _promptBuilder.BuildSummaryVariantsPrompt(context, title, body, metaDescription, contentTypeLabel),
                 cancellationToken);
 
             try

@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import {
-  commitMdxExportToGitHub,
-  downloadMdxExport,
+  commitHtmlExportToGitHub,
+  downloadHtmlExport,
   runReview,
   ApiError,
 } from "@/lib/content-writer/api";
 import type {
-  CommitMdxExportResult,
+  CommitHtmlExportResult,
   GeneratedContentSet,
   ReviewVerdict,
 } from "@/lib/content-writer/types";
@@ -32,7 +32,7 @@ export default function ReviewPublishPanel({
 
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
-  const [commitResult, setCommitResult] = useState<CommitMdxExportResult | null>(null);
+  const [commitResult, setCommitResult] = useState<CommitHtmlExportResult | null>(null);
 
   const hasPublishableContent = (result?.article?.wordCount ?? 0) > 0 || result?.blog != null;
 
@@ -60,7 +60,7 @@ export default function ReviewPublishPanel({
     setExportError(null);
     setIsExporting(true);
     try {
-      await downloadMdxExport(projectId, includeRevise);
+      await downloadHtmlExport(projectId, includeRevise);
     } catch (err) {
       setExportError(err instanceof ApiError ? err.message : "Export failed.");
     } finally {
@@ -73,7 +73,7 @@ export default function ReviewPublishPanel({
     setCommitResult(null);
     setIsCommitting(true);
     try {
-      const next = await commitMdxExportToGitHub(projectId, includeRevise);
+      const next = await commitHtmlExportToGitHub(projectId, includeRevise);
       setCommitResult(next);
     } catch (err) {
       setCommitError(err instanceof ApiError ? err.message : "Commit failed.");
@@ -147,9 +147,9 @@ export default function ReviewPublishPanel({
       )}
 
       <div className="mt-6 border-t border-border pt-5">
-        <h3 className="text-sm font-semibold text-foreground">9. Export .mdx files</h3>
+        <h3 className="text-sm font-semibold text-foreground">9. Export .html files</h3>
         <p className="mt-1 text-xs text-muted">
-          Downloads a .zip of the eligible content as .mdx files (YAML frontmatter + Markdown body). Review
+          Downloads a .zip of the eligible content as standalone .html files. Review
           is optional here — a never-reviewed row is included, only a row reviewed and NOT Approved is excluded.
         </p>
 
@@ -169,7 +169,7 @@ export default function ReviewPublishPanel({
             onClick={handleExport}
             className="mt-3 rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
           >
-            {isExporting ? "Exporting..." : "Export .mdx files (.zip)"}
+            {isExporting ? "Exporting..." : "Export .html files (.zip)"}
           </button>
 
           <button

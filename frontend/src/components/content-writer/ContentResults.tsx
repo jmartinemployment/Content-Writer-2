@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   generateBlogContent,
   generateColdOutreachContent,
@@ -388,11 +386,9 @@ function StepRow({
 }
 
 function MarkdownBody({ markdown, className }: { markdown: string; className?: string }) {
-  return (
-    <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
-    </div>
-  );
+  // `markdown` is a misnomer here — the backend now renders real HTML (Section tree -> tags),
+  // never Markdown, so this is a direct render, not a markdown parse.
+  return <div className={className} dangerouslySetInnerHTML={{ __html: markdown }} />;
 }
 
 function ArticleView({

@@ -18,7 +18,7 @@ public static class ContentWriterServiceRegistration
         IConfiguration configuration)
     {
         // No database. content-writer-v2 holds Project/Client state in memory for the process
-        // lifetime and durably saves output only by committing .mdx to the geekatyourspot GitHub
+        // lifetime and durably saves output only by committing .html to the geekatyourspot GitHub
         // repo (GeekatyourspotCommitService). State is gone on restart — that's expected.
         services.AddSingleton<IProjectStore, ProjectStore>();
         services.AddSingleton<IClientStore, ClientStore>();
@@ -56,7 +56,7 @@ public static class ContentWriterServiceRegistration
         services.AddScoped<IBlogPostingSchemaBuilder, BlogPostingSchemaBuilder>();
         services.AddScoped<IToolPageGenerator, ToolPageGenerator>();
         services.AddScoped<IContentGenerationOrchestrator, ContentGenerationOrchestrator>();
-        services.AddScoped<IMdxExportService, MdxExportService>();
+        services.AddScoped<IHtmlExportService, HtmlExportService>();
         services.AddHttpClient("GitHub");
         services.AddScoped<IGeekatyourspotCommitService, GeekatyourspotCommitService>();
         services.AddSingleton<IJsonLdParserService, JsonLdParserService>();

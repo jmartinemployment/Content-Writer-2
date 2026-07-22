@@ -1,5 +1,6 @@
 using ContentWriter.Api.Contracts;
 using ContentWriter.Application.Services;
+using ContentWriter.Application.Services.Export;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Infrastructure.InMemory;
 using Microsoft.AspNetCore.Mvc;
@@ -91,7 +92,8 @@ public class ProjectsController : ControllerBase
 
         var generatedContent = project.GeneratedContents.Select(g => new GeneratedContentResponse(
             g.Id, g.ContentType, g.Title, g.Slug, g.MetaDescription, g.Keywords, g.WordCount,
-            g.BodyHtml, g.JsonLdSchema, g.RelatedArticleUrl, g.CreatedAtUtc)).ToList();
+            g.Body is null ? string.Empty : SectionHtmlRenderer.RenderFragment(g.Body),
+            g.JsonLdSchema, g.RelatedArticleUrl, g.CreatedAtUtc)).ToList();
 
         var contentSet = project.GeneratedContents.Count == 0
             ? null

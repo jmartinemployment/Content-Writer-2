@@ -33,13 +33,13 @@ public static class GeneratedContentSetAssembler
             BlogSlug: blogSlug,
             BlogUrl: blogUrl,
             BlogJsonLd: blogRow?.JsonLdSchema,
-            FacebookPost: facebookRow is null ? null : new SocialPostDraft("Facebook", facebookRow.BodyHtml),
-            LinkedInPost: linkedInRow is null ? null : new SocialPostDraft("LinkedIn", linkedInRow.BodyHtml),
+            FacebookPost: facebookRow is null ? null : new SocialPostDraft("Facebook", ContentDocumentText.Flatten(facebookRow.Body)),
+            LinkedInPost: linkedInRow is null ? null : new SocialPostDraft("LinkedIn", ContentDocumentText.Flatten(linkedInRow.Body)),
             ColdOutreachEmail: coldOutreachRow is null
                 ? null
                 : new ColdOutreachEmailContent(
                     coldOutreachRow.Title,
-                    coldOutreachRow.BodyHtml,
+                    ContentDocumentText.Flatten(coldOutreachRow.Body),
                     coldOutreachRow.MetaDescription ?? string.Empty,
                     coldOutreachRow.RelatedArticleUrl ?? articleUrl ?? string.Empty),
             ImagePrompts: BuildImagePrompts(project),
@@ -55,7 +55,7 @@ public static class GeneratedContentSetAssembler
                 c.Title,
                 c.Slug,
                 CombineUrl(toolBaseUrl, department, c.Slug),
-                c.BodyHtml,
+                c.Body ?? EmptyDocument(c.Title),
                 c.MetaDescription ?? string.Empty,
                 c.JsonLdSchema,
                 c.SourceAppOrder))
@@ -81,7 +81,7 @@ public static class GeneratedContentSetAssembler
     public static ArticleDraft ToArticleDraft(GeneratedContent row) => new(
         row.Title,
         row.MetaDescription ?? string.Empty,
-        row.BodyHtml,
+        row.Body ?? EmptyDocument(row.Title),
         row.Keywords,
         row.WordCount,
         row.SectionOutline);
@@ -89,10 +89,13 @@ public static class GeneratedContentSetAssembler
     public static BlogDraft ToBlogDraft(GeneratedContent row) => new(
         row.Title,
         row.MetaDescription ?? string.Empty,
-        row.BodyHtml,
+        row.Body ?? EmptyDocument(row.Title),
         row.Keywords,
         row.WordCount,
         row.SectionOutline);
+
+    private static ContentDocument EmptyDocument(string title) =>
+        new(new Section("h2", title, [], null, []), []);
 
     private static GeneratedContent? Find(Project project, GeneratedContentType type) =>
         project.GeneratedContents.FirstOrDefault(c => c.ContentType == type);

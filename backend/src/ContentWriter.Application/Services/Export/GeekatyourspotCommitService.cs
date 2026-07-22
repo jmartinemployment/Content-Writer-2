@@ -17,7 +17,7 @@ public interface IGeekatyourspotCommitService
 public sealed record GeekatyourspotCommitResult(string CommitSha, string CommitUrl, IReadOnlyList<string> FilePaths);
 
 /// <summary>
-/// Commits exported .mdx files directly to the geekatyourspot GitHub repo via the Git Data API
+/// Commits exported .html files directly to the geekatyourspot GitHub repo via the Git Data API
 /// (blob -> tree -> commit -> ref update) — one atomic commit touching every file from a single
 /// export, avoiding the per-file-commit races of the simpler Contents API.
 /// </summary>
@@ -31,14 +31,14 @@ public sealed class GeekatyourspotCommitService : IGeekatyourspotCommitService
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly IMdxExportService _mdxExportService;
+    private readonly IHtmlExportService _htmlExportService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<GeekatyourspotCommitService> _logger;
 
     public GeekatyourspotCommitService(
-        IMdxExportService mdxExportService, IHttpClientFactory httpClientFactory, ILogger<GeekatyourspotCommitService> logger)
+        IHtmlExportService htmlExportService, IHttpClientFactory httpClientFactory, ILogger<GeekatyourspotCommitService> logger)
     {
-        _mdxExportService = mdxExportService;
+        _htmlExportService = htmlExportService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -52,7 +52,7 @@ public sealed class GeekatyourspotCommitService : IGeekatyourspotCommitService
                 "GEEKATYOURSPOT_GITHUB_TOKEN is not configured — cannot commit to geekatyourspot without a GitHub token.");
         }
 
-        var documents = await _mdxExportService.ExportAsync(projectId, includeRevise, cancellationToken);
+        var documents = await _htmlExportService.ExportAsync(projectId, includeRevise, cancellationToken);
 
         var http = BuildClient(token);
 

@@ -7,7 +7,7 @@ namespace ContentWriter.Infrastructure.InMemory;
 /// <summary>
 /// Holds every Project (and its full object graph: CrawledSite, KeywordSources, GeneratedContents,
 /// ReviewVerdicts) for the lifetime of this process. No database, no persistence — content-writer-v2
-/// only durably saves output by committing .mdx files to the geekatyourspot GitHub repo
+/// only durably saves output by committing .html files to the geekatyourspot GitHub repo
 /// (see GeekatyourspotCommitService). Everything here is gone on restart, by design.
 /// </summary>
 public interface IProjectStore

@@ -1,3 +1,5 @@
+using ContentWriter.Application.Services.Export;
+using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Application.DTOs;
@@ -46,21 +48,33 @@ public record BlogMetadataDraft(
     List<string> Keywords,
     List<string> SectionOutline);
 
+/// <summary>
+/// <see cref="Body"/> is the structural source of truth (per-element addressing, e.g.
+/// Body.Sections[1].Heading). <see cref="BodyHtml"/> is a computed wire/display convenience —
+/// the same rendered fragment the export step would produce — so the frontend can render it
+/// directly without needing its own copy of the Section-tree-to-HTML renderer.
+/// </summary>
 public record ArticleDraft(
     string Title,
     string MetaDescription,
-    string BodyHtml,
+    ContentDocument Body,
     List<string> Keywords,
     int WordCount,
-    List<string> SectionOutline);
+    List<string> SectionOutline)
+{
+    public string BodyHtml => SectionHtmlRenderer.RenderFragment(Body);
+}
 
 public record BlogDraft(
     string Title,
     string MetaDescription,
-    string BodyHtml,
+    ContentDocument Body,
     List<string> Keywords,
     int WordCount,
-    List<string> SectionOutline);
+    List<string> SectionOutline)
+{
+    public string BodyHtml => SectionHtmlRenderer.RenderFragment(Body);
+}
 
 public record ToolMetadataDraft(
     string DepartmentListExcerpt,
@@ -132,10 +146,13 @@ public record ToolPostContent(
     string Title,
     string Slug,
     string ToolUrl,
-    string BodyHtml,
+    ContentDocument Body,
     string MetaDescription,
     string? JsonLdSchema,
-    int? SourceAppOrder);
+    int? SourceAppOrder)
+{
+    public string BodyHtml => SectionHtmlRenderer.RenderFragment(Body);
+}
 
 public record GeneratedContentSet(
     ArticleDraft? Article,

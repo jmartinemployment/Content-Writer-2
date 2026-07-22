@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using ContentWriter.Application.DTOs;
 using ContentWriter.Application.Providers;
+using ContentWriter.Domain.Entities;
 
 namespace ContentWriter.Application.Services;
 
@@ -9,8 +10,150 @@ namespace ContentWriter.Application.Services;
 public static class LlmResponseJsonParser
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions SectionJsonOptions = CreateSectionJsonOptions();
     private static readonly Regex MarkdownFence = new(@"^```(?:json|html)?\s*|\s*```$", RegexOptions.Multiline | RegexOptions.Compiled);
     private static readonly Regex MarkdownLink = new(@"\[([^\]]*)\]\(([^)]+)\)", RegexOptions.Compiled);
+
+    /// <summary>Leaked Markdown/HTML syntax that should never appear in a plain-text field — see the
+    /// content-hygiene validation pass in the design plan: cheap to check because there's no markup
+    /// to balance, just stray symbols that shouldn't be there.</summary>
+    private static readonly Regex LeakedMarkupSyntax = new(
+        @"(\*\*|##+\s|\[[^\]]*\]\([^)]*\)|<[a-zA-Z/][^>]*>)",
+        RegexOptions.Compiled);
+
+    private static JsonSerializerOptions CreateSectionJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new ParagraphJsonConverter());
+        return options;
+    }
+
+    /// <summary>
+    /// Parses the model's structured Section-tree response. Two-tier validation: JSON/record-type
+    /// deserialization is the schema check (a response that doesn't fit the records fails here);
+    /// <see cref="ValidateContentHygiene"/> is the second tier, catching leaked Markdown/HTML syntax
+    /// a model typed into a plain-text field out of base-model habit.
+    /// </summary>
+    public static Section ParseSection(string rawContent, string expectedTag, string label)
+    {
+        var cleaned = Clean(rawContent);
+
+        foreach (var candidate in CandidateJsonStrings(cleaned))
+        {
+            try
+            {
+                var section = JsonSerializer.Deserialize<Section>(candidate, SectionJsonOptions);
+                if (section is not null && !string.IsNullOrWhiteSpace(section.Heading))
+                {
+                    var normalized = section with { Tag = expectedTag };
+                    ValidateContentHygiene(normalized, label);
+                    return normalized;
+                }
+            }
+            catch (JsonException)
+            {
+                // Try the next repaired candidate.
+            }
+        }
+
+        throw new ContentGenerationException(
+            $"Model did not return a valid structured section for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+    }
+
+    /// <summary>Parses a top-level sections array (whole-body regeneration/expansion responses).</summary>
+    public static IReadOnlyList<Section> ParseSections(string rawContent, string label)
+    {
+        var cleaned = Clean(rawContent);
+
+        foreach (var candidate in CandidateJsonStrings(cleaned))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<SectionsArrayResponse>(candidate, SectionJsonOptions);
+                if (parsed?.Sections is { Count: > 0 } sections)
+                {
+                    foreach (var section in sections)
+                    {
+                        ValidateContentHygiene(section, label);
+                    }
+                    return sections;
+                }
+            }
+            catch (JsonException)
+            {
+                // Try the next repaired candidate.
+            }
+        }
+
+        throw new ContentGenerationException(
+            $"Model did not return a valid sections array for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+    }
+
+    /// <summary>Parses the opening lede: a heading + paragraphs + which pattern (creative/summary) was used.</summary>
+    public static (Section Lede, LedeType LedeType) ParseLede(string rawContent, string label)
+    {
+        var cleaned = Clean(rawContent);
+
+        foreach (var candidate in CandidateJsonStrings(cleaned))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<LedeResponse>(candidate, SectionJsonOptions);
+                if (parsed is not null && !string.IsNullOrWhiteSpace(parsed.Heading))
+                {
+                    var ledeType = string.Equals(parsed.LedeType, "summary", StringComparison.OrdinalIgnoreCase)
+                        ? LedeType.Summary
+                        : LedeType.Creative;
+                    var section = new Section("h2", parsed.Heading, parsed.Paragraphs ?? [], null, []);
+                    ValidateContentHygiene(section, label);
+                    return (section, ledeType);
+                }
+            }
+            catch (JsonException)
+            {
+                // Try the next repaired candidate.
+            }
+        }
+
+        throw new ContentGenerationException(
+            $"Model did not return a valid lede for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+    }
+
+    private sealed record SectionsArrayResponse(List<Section>? Sections);
+
+    private sealed record LedeResponse(string? LedeType, string Heading, List<Paragraph>? Paragraphs);
+
+    private static void ValidateContentHygiene(Section section, string label)
+    {
+        CheckText(section.Heading, label);
+        foreach (var paragraph in section.Paragraphs)
+        {
+            var runs = paragraph switch
+            {
+                TextParagraph text => text.Runs,
+                ListParagraph list => list.Items.SelectMany(item => item).ToList(),
+                _ => [],
+            };
+            foreach (var run in runs)
+            {
+                CheckText(run.Text, label);
+            }
+        }
+        foreach (var child in section.Children)
+        {
+            ValidateContentHygiene(child, label);
+        }
+    }
+
+    private static void CheckText(string text, string label)
+    {
+        if (LeakedMarkupSyntax.IsMatch(text))
+        {
+            throw new ContentGenerationException(
+                $"Model leaked Markdown/HTML syntax into a plain-text field for {label}: \"{text}\". " +
+                "Plain text only — use the bold/italic/href fields instead.");
+        }
+    }
 
     public static T Parse<T>(string rawContent, string label)
     {
@@ -39,43 +182,6 @@ public static class LlmResponseJsonParser
 
         throw new ContentGenerationException(
             $"Model did not return valid JSON for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}.{hint}");
-    }
-
-    public static string ParseHtmlBody(string rawContent, string label)
-    {
-        var cleaned = Clean(rawContent);
-
-        if (cleaned.StartsWith('{'))
-        {
-            foreach (var candidate in CandidateJsonStrings(cleaned))
-            {
-                try
-                {
-                    var parsed = JsonSerializer.Deserialize<BodyHtmlResponse>(candidate, JsonOptions);
-                    if (!string.IsNullOrWhiteSpace(parsed?.BodyHtml))
-                    {
-                        return HtmlBodyNormalizer.Normalize(parsed.BodyHtml);
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Fall through to salvage.
-                }
-            }
-
-            var bodyMatch = Regex.Match(cleaned, @"""bodyHtml""\s*:\s*""((?:\\.|[^""\\])*)""", RegexOptions.Singleline);
-            if (bodyMatch.Success)
-            {
-                return HtmlBodyNormalizer.Normalize(UnescapeJsonString(bodyMatch.Groups[1].Value));
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(cleaned))
-        {
-            throw new ContentGenerationException($"Model returned empty HTML for {label}.");
-        }
-
-        return HtmlBodyNormalizer.Normalize(cleaned);
     }
 
     public static string ParseSocialText(string rawContent, string articleUrl, string label)
@@ -415,8 +521,6 @@ public static class LlmResponseJsonParser
     }
 
     private sealed record SocialTextResponse(string Text);
-
-    private sealed record BodyHtmlResponse(string BodyHtml);
 
     private sealed record ColdOutreachResponse(string? Subject, string? BodyText, string? CtaLabel);
 

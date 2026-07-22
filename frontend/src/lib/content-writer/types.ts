@@ -184,7 +184,7 @@ export interface ToolPostDraft {
   sourceAppOrder: number | null;
 }
 
-export interface CommitMdxExportResult {
+export interface CommitHtmlExportResult {
   commitSha: string;
   commitUrl: string;
   filePaths: string[];

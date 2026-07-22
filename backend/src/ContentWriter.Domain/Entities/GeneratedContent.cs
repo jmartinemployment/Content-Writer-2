@@ -15,7 +15,12 @@ public class GeneratedContent
     public string? DisplayTitle { get; set; }
 
     public string Slug { get; set; } = string.Empty;
-    public string BodyHtml { get; set; } = string.Empty;
+
+    /// <summary>Structured section tree — never a Markdown/HTML string that needs re-parsing for structure.</summary>
+    public ContentDocument? Body { get; set; }
+
+    /// <summary>Which lede pattern the model was asked for / used. Orchestration metadata only — never rendered.</summary>
+    public LedeType? LedeType { get; set; }
 
     /// <summary>GeekBackend post_translations.summary — LLM-written, distinct from MetaDescription and every other summary variant (pillar, tool, blog).</summary>
     public string Summary { get; set; } = string.Empty;
