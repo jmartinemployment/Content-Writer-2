@@ -8,6 +8,8 @@ namespace ContentWriter.Application.Services.PromptBuilders;
 
 public interface IContentPromptBuilder
 {
+    ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs);
+
     ChatCompletionRequest BuildArticleMetadataPrompt(ProjectGenerationContext context);
     ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
@@ -88,6 +90,39 @@ public interface IContentPromptBuilder
 
 public class ContentPromptBuilder : IContentPromptBuilder
 {
+    private const string TopicFocusJsonContract =
+        "{\"focus\": string[] (4-8 short topic phrases, 1-4 words each, describing the site's real services/subject matter — no generic filler words)}";
+
+    public ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs)
+    {
+        var headingBlock = string.Join("\n", headings.Take(60).Select(h => $"- {h}"));
+        var paragraphBlock = string.Join("\n\n", paragraphs.Take(30).Select(p => p.Length > 300 ? p[..300] + "…" : p));
+
+        var system = new StringBuilder()
+            .AppendLine("You extract the real topical focus of a business website from its crawled headings and body text.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
+            .AppendLine(TopicFocusJsonContract)
+            .AppendLine("Each phrase must name a real service, product, industry, or subject the site actually covers (e.g. \"managed IT services\", ")
+            .AppendLine("\"AI implementation\", \"Salesforce consulting\") — never a generic word like \"business\", \"solutions\", \"help\", \"choose\", or \"build\" on its own.")
+            .AppendLine("Prefer multi-word phrases over single words. If the site is thin/generic, return fewer, more honest phrases rather than padding with filler.")
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Site name: {siteName}")
+            .AppendLine()
+            .AppendLine("Headings crawled from the site:")
+            .AppendLine(headingBlock)
+            .AppendLine()
+            .AppendLine("Body text excerpts crawled from the site:")
+            .AppendLine(paragraphBlock)
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.2,
+            MaxOutputTokens: 512);
+    }
+
     private const string ArticleMetadataJsonContract =
         "{\"title\": string, \"metaDescription\": string (max 160 chars), \"keywords\": string[] (5-10 items), \"sectionOutline\": string[] (5-7 declarative H2 headings — exactly ONE tools section with a descriptive name like \"Top AI Tools for {topic}\" (never a bare \"Tools/Platforms\" label), plus final item: \"People Also Ask\")}";
 
@@ -579,9 +614,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Required \"## \" sections: Overview, Key Capabilities, Implementation Considerations, When to Use.")
             .AppendLine($"Target at least {ContentLengthTargets.ToolMinWords:N0} words (aim for {ContentLengthTargets.ToolTargetMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0}). Hard maximum {ContentLengthTargets.ToolHardMaxWords:N0}. Do not stop early.")
             .AppendLine($"Only describe real, verifiable capabilities of {app.Name} — never invent a feature, integration, or claim to fill space.")
-            .AppendLine("Implementation Considerations must not be generic industry advice: name the concrete mechanism by which " +
-                $"{context.PublisherName} ({context.ImplementerPositioning}) closes the gap for a client deploying this tool — " +
-                "accelerated deployment timelines, data model design, workflow/process configuration, integrations, or change management (training, adoption, rollout).")
+            .AppendLine($"Implementation Considerations must not be generic industry advice — cover, made concrete to {app.Name} specifically:")
+            .AppendLine($"  1. Accelerated deployment — what shortens go-live for {app.Name} (pre-built connectors, templated setup, phased rollout).")
+            .AppendLine($"  2. Data model design — what {app.Name}-specific data structure/mapping decisions matter upfront.")
+            .AppendLine($"  3. Workflow/process configuration — what {app.Name}-specific approval chains, routing, or automation logic get configured.")
+            .AppendLine($"  4. Custom code/development — {app.Name}'s own extension mechanism if it has one (API, scripting, SDK); if it's config-only, say so rather than inventing one.")
+            .AppendLine($"Frame these as {context.PublisherName} ({context.ImplementerPositioning}) closing the gap for a client — consultative, not a sales pitch.")
             .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
                 "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
             .ToString();
@@ -739,11 +777,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("  Brief overview of what the platform does for this use case.")
             .AppendLine("  - 2-4 factual capability bullets")
             .AppendLine("  #### How an AI implementer helps with {Platform}")
-            .AppendLine("  Yes — an AI implementer can facilitate {Platform} deployments. State which client problems are solved ")
-            .AppendLine("  (e.g. faster configuration, data models, integrations, Apex/LWC, Agentforce/agents, governance, training). ")
-            .AppendLine("  Tie problems to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation.")
-            .AppendLine("Example (Salesforce): AI implementers accelerate Salesforce rollouts via AI-assisted data model design, ")
-            .AppendLine("configuration workflows, Apex/LWC development, and autonomous agents such as Agentforce.")
+            .AppendLine("  REQUIRED: cover all four of these mechanisms, each made concrete to THIS specific platform (not generic filler, not just Salesforce-flavored jargon reused for every platform):")
+            .AppendLine("    1. Accelerated deployment — what specifically shortens go-live for {Platform} (e.g. pre-built connectors, templated setup, phased rollout plan).")
+            .AppendLine("    2. Data model design — what {Platform}-specific data structure/mapping decisions an implementer gets right upfront (e.g. chart-of-accounts mapping, vendor master data, GL coding schema).")
+            .AppendLine("    3. Workflow/process configuration — what {Platform}-specific approval chains, routing rules, or automation logic get configured.")
+            .AppendLine("    4. Custom code/development — what {Platform}-specific extension mechanism exists if the platform supports one (its own scripting/API/SDK layer, e.g. custom connectors, API integrations, scripted validation rules); if {Platform} genuinely has no such layer, say so plainly instead of inventing one — don't force this point for a platform that's config-only.")
+            .AppendLine("  Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation. Vary the language between platforms — do not reuse the same sentence template verbatim for each one.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
             .AppendLine($"Target {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words for this Tools section (longer than other sections).")
             .AppendLine("Each platform <h3> should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")

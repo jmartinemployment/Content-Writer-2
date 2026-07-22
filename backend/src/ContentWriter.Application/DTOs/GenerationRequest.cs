@@ -25,6 +25,8 @@ public record ProjectGenerationContext(
     string ImplementerPositioning,
     LlmProviderType Provider);
 
+public record TopicFocusResponse(string[]? Focus);
+
 public record KeywordSourceSummary(
     KeywordSourceCategory Category,
     string? Title,
