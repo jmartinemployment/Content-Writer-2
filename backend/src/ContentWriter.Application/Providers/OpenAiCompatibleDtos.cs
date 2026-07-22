@@ -29,6 +29,9 @@ internal sealed class OpenAiCompatibleResponse
 internal sealed class OpenAiChoice
 {
     [JsonPropertyName("message")] public OpenAiCompatibleMessage Message { get; set; } = new("assistant", string.Empty);
+    // #region agent log
+    [JsonPropertyName("finish_reason")] public string? FinishReason { get; set; }
+    // #endregion
 }
 
 internal sealed class OpenAiUsage

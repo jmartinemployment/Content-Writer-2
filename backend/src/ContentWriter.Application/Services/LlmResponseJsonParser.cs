@@ -65,30 +65,136 @@ public static class LlmResponseJsonParser
     {
         var cleaned = Clean(rawContent);
 
+        // #region agent log
+        {
+            var trimmed = cleaned.TrimEnd();
+            var looksTruncated = cleaned.Contains('{') && !trimmed.EndsWith('}') && !trimmed.EndsWith(']');
+            var last80 = trimmed.Length <= 80 ? trimmed : trimmed[^80..];
+            AgentDebugLog("A", "LlmResponseJsonParser.ParseSections:entry", label, new Dictionary<string, object?>
+            {
+                ["rawLength"] = rawContent.Length,
+                ["cleanedLength"] = cleaned.Length,
+                ["looksTruncated"] = looksTruncated,
+                ["startsWith"] = cleaned[..Math.Min(80, cleaned.Length)],
+                ["endsWith"] = last80,
+                ["hasSectionsKey"] = cleaned.Contains("\"sections\"", StringComparison.Ordinal),
+                ["startsWithArray"] = trimmed.StartsWith('['),
+            });
+        }
+        // #endregion
+
+        var candidateIndex = 0;
         foreach (var candidate in CandidateJsonStrings(cleaned))
         {
             try
             {
-                var parsed = JsonSerializer.Deserialize<SectionsArrayResponse>(candidate, SectionJsonOptions);
-                if (parsed?.Sections is { Count: > 0 } sections)
+                // Models frequently drop the {"sections": [...]} wrapper and return the bare array
+                // directly when asked for "the sections array" — accept both shapes.
+                var isBareArray = candidate.TrimStart().StartsWith('[');
+                var sectionsRaw = isBareArray
+                    ? JsonSerializer.Deserialize<List<Section>>(candidate, SectionJsonOptions)
+                    : JsonSerializer.Deserialize<SectionsArrayResponse>(candidate, SectionJsonOptions)?.Sections;
+
+                if (sectionsRaw is { Count: > 0 } sections)
                 {
                     var normalized = sections.Select(Normalize).ToList();
                     foreach (var section in normalized)
                     {
                         ValidateContentHygiene(section, label);
                     }
+                    // #region agent log
+                    AgentDebugLog("A", "LlmResponseJsonParser.ParseSections:success", label, new Dictionary<string, object?>
+                    {
+                        ["candidateIndex"] = candidateIndex,
+                        ["isBareArray"] = isBareArray,
+                        ["sectionCount"] = normalized.Count,
+                        ["headings"] = normalized.Select(s => s.Heading).ToList(),
+                    });
+                    // #endregion
                     return normalized;
                 }
+
+                // #region agent log
+                AgentDebugLog("C", "LlmResponseJsonParser.ParseSections:emptyOrNullSections", label, new Dictionary<string, object?>
+                {
+                    ["candidateIndex"] = candidateIndex,
+                    ["candidateLength"] = candidate.Length,
+                    ["isBareArray"] = isBareArray,
+                    ["sectionsNull"] = sectionsRaw is null,
+                    ["sectionsCount"] = sectionsRaw?.Count ?? -1,
+                    ["candidateStartsWith"] = candidate[..Math.Min(60, candidate.Length)],
+                });
+                // #endregion
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                // #region agent log
+                AgentDebugLog("B", "LlmResponseJsonParser.ParseSections:jsonException", label, new Dictionary<string, object?>
+                {
+                    ["candidateIndex"] = candidateIndex,
+                    ["candidateLength"] = candidate.Length,
+                    ["exceptionMessage"] = ex.Message,
+                    ["path"] = ex.Path,
+                    ["bytePosition"] = ex.BytePositionInLine,
+                });
+                // #endregion
                 // Try the next repaired candidate.
             }
+            catch (ContentGenerationException ex)
+            {
+                // #region agent log
+                AgentDebugLog("E", "LlmResponseJsonParser.ParseSections:hygieneFail", label, new Dictionary<string, object?>
+                {
+                    ["candidateIndex"] = candidateIndex,
+                    ["exceptionMessage"] = ex.Message[..Math.Min(300, ex.Message.Length)],
+                });
+                // #endregion
+                throw;
+            }
+            candidateIndex++;
         }
 
+        // #region agent log
+        AgentDebugLog("A", "LlmResponseJsonParser.ParseSections:allCandidatesFailed", label, new Dictionary<string, object?>
+        {
+            ["candidatesTried"] = candidateIndex,
+            ["rawLength"] = rawContent.Length,
+        });
+        // #endregion
+
+        var trimmedEnd = cleaned.TrimEnd();
+        var isTruncated = cleaned.Length > 0 && !trimmedEnd.EndsWith('}') && !trimmedEnd.EndsWith(']');
+        var hint = isTruncated ? " The response looks truncated — it may have hit the max output token limit." : string.Empty;
+
         throw new ContentGenerationException(
-            $"Model did not return a valid sections array for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+            $"Model did not return a valid sections array for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}.{hint}");
     }
+
+    // #region agent log
+    private static void AgentDebugLog(string hypothesisId, string location, string label, Dictionary<string, object?> data)
+    {
+        try
+        {
+            data["label"] = label;
+            var payload = new Dictionary<string, object?>
+            {
+                ["sessionId"] = "d9194e",
+                ["hypothesisId"] = hypothesisId,
+                ["location"] = location,
+                ["message"] = location,
+                ["data"] = data,
+                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            File.AppendAllText(
+                "/Users/jeffmartin/development/content-writer-v2/.cursor/debug-d9194e.log",
+                JsonSerializer.Serialize(payload) + "\n");
+        }
+        catch
+        {
+            // Debug ingest must never break generation.
+        }
+    }
+    // #endregion
 
     /// <summary>Parses the opening lede: a heading + paragraphs + which pattern (creative/summary) was used.</summary>
     public static (Section Lede, LedeType LedeType) ParseLede(string rawContent, string label)

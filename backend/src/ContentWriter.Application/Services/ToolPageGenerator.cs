@@ -186,6 +186,36 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         var result = await provider.CompleteAsync(
             _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug),
             cancellationToken);
+        // #region agent log
+        try
+        {
+            var content = result.Content ?? string.Empty;
+            var trimmed = content.TrimEnd();
+            var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["sessionId"] = "d9194e",
+                ["hypothesisId"] = "A",
+                ["location"] = "ToolPageGenerator.GenerateToolBodyWithValidationAsync:afterComplete",
+                ["message"] = "tool body LLM response received",
+                ["data"] = new Dictionary<string, object?>
+                {
+                    ["appName"] = app.Name,
+                    ["modelUsed"] = result.ModelUsed,
+                    ["promptTokens"] = result.PromptTokens,
+                    ["completionTokens"] = result.CompletionTokens,
+                    ["maxOutputTokens"] = 8192,
+                    ["contentLength"] = content.Length,
+                    ["looksTruncated"] = content.Contains('{') && !trimmed.EndsWith('}') && !trimmed.EndsWith(']'),
+                    ["endsWith"] = trimmed.Length <= 100 ? trimmed : trimmed[^100..],
+                },
+                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+            File.AppendAllText(
+                "/Users/jeffmartin/development/content-writer-v2/.cursor/debug-d9194e.log",
+                payload + "\n");
+        }
+        catch { /* debug only */ }
+        // #endregion
         var sections = LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'");
         var wordCount = ContentDocumentText.CountWords(sections);
 

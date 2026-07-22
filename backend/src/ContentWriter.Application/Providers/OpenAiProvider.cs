@@ -76,6 +76,34 @@ public class OpenAiProvider : IContentGenerationProvider
         var choice = parsed.Choices.FirstOrDefault()
             ?? throw new ContentGenerationException("OpenAI response contained no choices.");
 
+        // #region agent log
+        try
+        {
+            var content = choice.Message.Content ?? string.Empty;
+            var debugPayload = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["sessionId"] = "d9194e",
+                ["hypothesisId"] = "A",
+                ["location"] = "OpenAiProvider.CompleteAsync:result",
+                ["message"] = "openai completion finish_reason",
+                ["data"] = new Dictionary<string, object?>
+                {
+                    ["finishReason"] = choice.FinishReason,
+                    ["completionTokens"] = parsed.Usage?.CompletionTokens,
+                    ["promptTokens"] = parsed.Usage?.PromptTokens,
+                    ["maxTokens"] = request.MaxOutputTokens,
+                    ["contentLength"] = content.Length,
+                    ["model"] = parsed.Model ?? _options.Model,
+                },
+                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+            File.AppendAllText(
+                "/Users/jeffmartin/development/content-writer-v2/.cursor/debug-d9194e.log",
+                debugPayload + "\n");
+        }
+        catch { /* debug only */ }
+        // #endregion
+
         return new ChatCompletionResult(
             Content: choice.Message.Content,
             ModelUsed: parsed.Model ?? _options.Model,
