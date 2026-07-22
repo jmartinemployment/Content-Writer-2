@@ -189,11 +189,14 @@ public class ContentPromptBuilder : IContentPromptBuilder
                 ? "Start with 2-3 introductory paragraphs (context and thesis). Do NOT start with \"How\" or a question. Then \"## \" for this section."
                 : "Start with \"## \" for this section only — no intro paragraphs.")
             .AppendLine("Include 2-3 \"### \" subsections with multiple paragraphs and at least one \"- \" bullet list where appropriate.")
-            .AppendLine($"If natural for this section, illustrate with a brief scenario of how {context.PublisherName} ({context.ImplementerPositioning}) solves this client problem — not just general industry commentary.")
+            .AppendLine("Do not write this as a neutral textbook explainer of the general subject — every subsection should be framed through what an AI implementation " +
+                $"consultancy like {context.PublisherName} ({context.ImplementerPositioning}) actually does about the problem being discussed, not just background education on it. " +
+                "A reader should finish the section understanding a consultancy's specific angle on it, not just the general concept.")
+            .AppendLine("If a hypothetical scenario is used, keep it to 1-2 sentences woven naturally into the surrounding paragraph — not a bolt-on closing paragraph that repeats what was already said.")
             .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
-            .AppendLine("You may still use a scenario with a concrete quantified outcome for narrative punch (e.g. \"a 40% drop in processing time\"), ")
-            .AppendLine("but it MUST be explicitly labeled hypothetical/illustrative — e.g. \"Consider a hypothetical mid-sized manufacturer that...\" or ")
-            .AppendLine("\"In a representative scenario, an implementer might reduce...\". Never phrase it as something that already happened to a real client.")
+            .AppendLine("A hypothetical scenario may still use a concrete quantified outcome for punch (e.g. \"a 40% drop in processing time\"), ")
+            .AppendLine("but it MUST be explicitly labeled hypothetical/illustrative — e.g. \"a hypothetical mid-sized manufacturer\" or ")
+            .AppendLine("\"in a representative scenario\". Never phrase it as something that already happened to a real client.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
@@ -782,7 +785,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("    2. Data model design — what {Platform}-specific data structure/mapping decisions an implementer gets right upfront (e.g. chart-of-accounts mapping, vendor master data, GL coding schema).")
             .AppendLine("    3. Workflow/process configuration — what {Platform}-specific approval chains, routing rules, or automation logic get configured.")
             .AppendLine("    4. Custom code/development — what {Platform}-specific extension mechanism exists if the platform supports one (its own scripting/API/SDK layer, e.g. custom connectors, API integrations, scripted validation rules); if {Platform} genuinely has no such layer, say so plainly instead of inventing one — don't force this point for a platform that's config-only.")
-            .AppendLine("  Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation. Vary the language between platforms — do not reuse the same sentence template verbatim for each one.")
+            .AppendLine("  Keep each of the 4 points to ONE tight sentence — do not write a full paragraph per point or restate the platform overview/capability bullets above. ")
+            .AppendLine("  Do not use a numbered \"1. **Label**: ...\" list for this — write it as flowing prose covering all four, so it doesn't read as a mechanical template repeated per platform.")
+            .AppendLine("  Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation. Vary the language and sentence structure between platforms — do not reuse the same phrasing for each one.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
             .AppendLine($"Target {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words for this Tools section (longer than other sections).")
             .AppendLine("Each platform <h3> should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
