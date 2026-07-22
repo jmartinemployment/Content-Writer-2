@@ -81,7 +81,7 @@ public class SoftwareApplicationSchemaBuilder : ISoftwareApplicationSchemaBuilde
         node["keywords"] = string.Join(", ", metadata.Keywords);
         node["subjectOf"] = new Dictionary<string, object?>
         {
-            ["@type"] = "TechnicalArticle",
+            ["@type"] = "TechArticle",
             ["@id"] = pillarArticleUrl
         };
 

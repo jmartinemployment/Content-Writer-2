@@ -118,4 +118,18 @@ public class ContentDocumentTests
         Assert.Contains("<script type=\"application/ld+json\">", html);
         Assert.Contains("\"headline\":\"Title & More\"", html);
     }
+
+    [Fact]
+    public void SectionHtmlRenderer_escapes_special_characters_in_meta_attribute_values()
+    {
+        var lede = MakeSection("h2", "Lede", "body");
+        var document = new ContentDocument(lede, []);
+        const string description = "Tax Compliance & Regulations \"quoted\" <tag> value";
+
+        var html = SectionHtmlRenderer.RenderDocument(
+            "Title", description, null, "article", null, null, new Dictionary<string, string?>(), document);
+
+        Assert.Contains("content=\"Tax Compliance &amp; Regulations &quot;quoted&quot; &lt;tag&gt; value\"", html);
+        Assert.DoesNotContain("content=\"Tax Compliance & Regulations", html);
+    }
 }

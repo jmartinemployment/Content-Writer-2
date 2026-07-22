@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy(CorsPolicyName, policy =>
     {
         var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
-            ?? new[] { "https://seo.geekatyourspot.com", "http://localhost:3000" };
+            ?? new[] { "https://www.geekatyourspot.com", "http://localhost:3000" };
 
         policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()

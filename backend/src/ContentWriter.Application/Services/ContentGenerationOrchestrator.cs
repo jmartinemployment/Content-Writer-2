@@ -991,11 +991,11 @@ public class CompanyProfileOptions
     public const string SectionName = "CompanyProfile";
 
     public string PublisherName { get; set; } = "Geek At Your Spot";
-    public string PublisherLogoUrl { get; set; } = "https://seo.geekatyourspot.com/logo.png";
+    public string PublisherLogoUrl { get; set; } = "https://www.geekatyourspot.com/images/GeekAtYourSpot.svg";
     public string AuthorName { get; set; } = "Geek At Your Spot Editorial Team";
-    public string ArticleBaseUrl { get; set; } = "https://seo.geekatyourspot.com/use-cases";
-    public string BlogBaseUrl { get; set; } = "https://seo.geekatyourspot.com/blog";
-    public string ToolBaseUrl { get; set; } = "https://seo.geekatyourspot.com/tools";
+    public string ArticleBaseUrl { get; set; } = "https://www.geekatyourspot.com/use-cases";
+    public string BlogBaseUrl { get; set; } = "https://www.geekatyourspot.com/blog";
+    public string ToolBaseUrl { get; set; } = "https://www.geekatyourspot.com/tools";
 
     /// <summary>How the publisher positions AI implementation services in pillar Tools sections.</summary>
     public string ImplementerPositioning { get; set; } =

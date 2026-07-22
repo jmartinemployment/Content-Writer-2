@@ -56,7 +56,10 @@ public class TechnicalArticleSchemaBuilder : ITechnicalArticleSchemaBuilder
     {
         return new Dictionary<string, object?>
         {
-            ["@type"] = "TechnicalArticle",
+            // "TechArticle" is the real schema.org type — "TechnicalArticle" doesn't exist there
+            // (confirmed: schema.org/TechnicalArticle 404s; schema.org/TechArticle is real and is
+            // the only type "proficiencyLevel" below is actually defined on).
+            ["@type"] = "TechArticle",
             ["headline"] = metadata.Headline,
             ["description"] = metadata.Description,
             ["image"] = new[] { metadata.MainImageUrl },

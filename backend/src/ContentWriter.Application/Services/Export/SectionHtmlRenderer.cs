@@ -45,7 +45,7 @@ public static class SectionHtmlRenderer
         {
             var link = doc.CreateElement("link");
             link.SetAttributeValue("rel", "canonical");
-            link.SetAttributeValue("href", canonicalUrl);
+            link.SetAttributeValue("href", EncodeAttribute(canonicalUrl));
             head.AppendChild(link);
         }
 
@@ -119,7 +119,7 @@ public static class SectionHtmlRenderer
     {
         var meta = doc.CreateElement("meta");
         meta.SetAttributeValue("property", property);
-        meta.SetAttributeValue("content", content);
+        meta.SetAttributeValue("content", EncodeAttribute(content));
         head.AppendChild(meta);
     }
 
@@ -149,7 +149,7 @@ public static class SectionHtmlRenderer
         else
         {
             meta.SetAttributeValue("name", name);
-            meta.SetAttributeValue("content", content);
+            meta.SetAttributeValue("content", EncodeAttribute(content));
         }
         head.AppendChild(meta);
     }
@@ -160,7 +160,7 @@ public static class SectionHtmlRenderer
         if (!string.IsNullOrWhiteSpace(section.Href))
         {
             var anchor = doc.CreateElement("a");
-            anchor.SetAttributeValue("href", section.Href);
+            anchor.SetAttributeValue("href", EncodeAttribute(section.Href));
             anchor.AppendChild(CreateEncodedTextNode(doc, section.Heading));
             headingTag.AppendChild(anchor);
         }
@@ -213,7 +213,7 @@ public static class SectionHtmlRenderer
             if (!string.IsNullOrWhiteSpace(run.Href))
             {
                 var anchor = doc.CreateElement("a");
-                anchor.SetAttributeValue("href", run.Href);
+                anchor.SetAttributeValue("href", EncodeAttribute(run.Href));
                 parent.AppendChild(anchor);
                 textHost = anchor;
             }
@@ -241,4 +241,10 @@ public static class SectionHtmlRenderer
     /// markup instead of literal text. Encoding here is the actual injection guard.</summary>
     private static HtmlNode CreateEncodedTextNode(HtmlDocument doc, string text) =>
         doc.CreateTextNode(System.Net.WebUtility.HtmlEncode(text));
+
+    /// <summary>HtmlAgilityPack's SetAttributeValue only escapes literal `"` — a bare `&`/`&lt;`/`&gt;`
+    /// in a title/description/href (e.g. "R&amp;D", "Q&amp;A") is left untouched, which is invalid
+    /// HTML5. The `"` case is already safe from attribute-breakout either way; this closes the
+    /// remaining conformance gap for every generated attribute value.</summary>
+    private static string EncodeAttribute(string value) => System.Net.WebUtility.HtmlEncode(value);
 }

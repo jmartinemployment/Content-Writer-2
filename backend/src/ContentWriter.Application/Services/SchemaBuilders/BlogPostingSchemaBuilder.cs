@@ -51,12 +51,12 @@ public class BlogPostingSchemaBuilder : IBlogPostingSchemaBuilder
             },
             ["keywords"] = string.Join(", ", metadata.Keywords),
             ["wordCount"] = metadata.WordCount,
-            // Cross-link back to the source TechnicalArticle this post expands on.
+            // Cross-link back to the source TechArticle this post expands on.
             ["citation"] = new[]
             {
                 new Dictionary<string, object?>
                 {
-                    ["@type"] = "TechnicalArticle",
+                    ["@type"] = "TechArticle",
                     ["url"] = relatedArticleUrl
                 }
             }

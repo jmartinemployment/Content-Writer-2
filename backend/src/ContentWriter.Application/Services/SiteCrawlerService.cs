@@ -17,7 +17,7 @@ public class SiteCrawlerService : ISiteCrawlerService
         if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
         {
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Mozilla/5.0 (compatible; ContentWriterBot/1.0; +https://seo.geekatyourspot.com)");
+                "Mozilla/5.0 (compatible; ContentWriterBot/1.0; +https://www.geekatyourspot.com)");
         }
         _logger = logger;
     }
