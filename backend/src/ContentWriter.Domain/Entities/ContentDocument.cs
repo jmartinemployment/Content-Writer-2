@@ -19,7 +19,8 @@ public sealed record Section(
     string Heading,
     IReadOnlyList<Paragraph> Paragraphs,
     string? Href,
-    IReadOnlyList<Section> Children);
+    IReadOnlyList<Section> Children,
+    string? ImagePrompt = null);
 
 /// <summary>
 /// A generated body: a lede section (opening hook, always tag "h2") followed by the body's

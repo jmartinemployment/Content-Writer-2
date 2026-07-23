@@ -99,6 +99,7 @@ export function createProject(input: {
   targetKeyword: string;
   department: string;
   preferredProvider: LlmProviderType;
+  useExactKeywordAsTitle?: boolean;
 }): Promise<ProjectSummary> {
   return request<ProjectSummary>("/api/projects", {
     method: "POST",

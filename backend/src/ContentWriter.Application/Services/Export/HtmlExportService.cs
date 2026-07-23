@@ -52,6 +52,12 @@ public class HtmlExportService : IHtmlExportService
             .ThenBy(c => c.SourceAppOrder ?? int.MaxValue))
         {
             documents.Add(ToHtmlDocument(row, project.Department));
+
+            var imagePromptDocs = ExtractImagePrompts(row);
+            foreach (var imagePromptDoc in imagePromptDocs)
+            {
+                documents.Add(imagePromptDoc);
+            }
         }
 
         if (documents.Count == 0)
@@ -63,9 +69,25 @@ public class HtmlExportService : IHtmlExportService
         return documents;
     }
 
+    private static readonly HashSet<GeneratedContentType> ImagePromptContentTypes =
+    [
+        GeneratedContentType.ImagePromptPillarFigure,
+        GeneratedContentType.ImagePromptBlogFigure,
+        GeneratedContentType.ImagePromptSection,
+        GeneratedContentType.ImagePromptSocialFacebook,
+        GeneratedContentType.ImagePromptSocialLinkedIn,
+    ];
+
     private ExportedHtmlDocument ToHtmlDocument(GeneratedContent row, string department)
     {
         var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
+        var folder = FolderFor(row.ContentType);
+
+        if (ImagePromptContentTypes.Contains(row.ContentType))
+        {
+            return new ExportedHtmlDocument($"{folder}/{slug}.txt", PlainTextOf(row.Body));
+        }
+
         var title = string.IsNullOrWhiteSpace(row.DisplayTitle) ? row.Title : row.DisplayTitle!;
         var body = row.Body ?? new ContentDocument(
             new Section("h2", title, [], null, []), []);
@@ -98,9 +120,15 @@ public class HtmlExportService : IHtmlExportService
         var html = SectionHtmlRenderer.RenderDocument(
             title, row.MetaDescription, canonicalUrl, ogType, _companyProfile.PublisherLogoUrl, row.JsonLdSchema, meta, body);
 
-        var folder = FolderFor(row.ContentType);
         return new ExportedHtmlDocument($"{folder}/{slug}.html", html);
     }
+
+    /// <summary>Recovers the raw prompt string a <see cref="ContentDocumentText.FromPlainText"/> body wraps —
+    /// image-prompt rows export as plain .txt, not a rendered HTML page.</summary>
+    private static string PlainTextOf(ContentDocument? body) =>
+        body?.Lede.Paragraphs.OfType<TextParagraph>().FirstOrDefault() is { } paragraph
+            ? string.Join(" ", paragraph.Runs.Select(r => r.Text))
+            : string.Empty;
 
     /// <summary>Matches the URL construction each JSON+LD schema builder already uses
     /// (<c>ContentGenerationOrchestrator.CombineUrl</c>) — the canonical tag and JSON+LD "url" field
@@ -140,5 +168,37 @@ public class HtmlExportService : IHtmlExportService
             return true;
 
         return latest.Status == ReviewVerdictStatus.Approved || (includeRevise && latest.Status != ReviewVerdictStatus.Approved);
+    }
+
+    private static IReadOnlyList<ExportedHtmlDocument> ExtractImagePrompts(GeneratedContent row)
+    {
+        var prompts = new List<ExportedHtmlDocument>();
+        var body = row.Body;
+        if (body is null)
+            return prompts;
+
+        var slug = string.IsNullOrWhiteSpace(row.Slug) ? row.Id.ToString() : row.Slug;
+
+        CollectImagePrompts(body.Lede, 0, slug, prompts);
+        foreach (var section in body.Sections)
+        {
+            CollectImagePrompts(section, 0, slug, prompts);
+        }
+
+        return prompts;
+    }
+
+    private static void CollectImagePrompts(Section section, int sectionIndex, string slug, List<ExportedHtmlDocument> prompts)
+    {
+        if (!string.IsNullOrWhiteSpace(section.ImagePrompt))
+        {
+            var fileName = $"image-prompts/sections/{slug}-{sectionIndex}.txt";
+            prompts.Add(new ExportedHtmlDocument(fileName, section.ImagePrompt));
+        }
+
+        for (int i = 0; i < section.Children.Count; i++)
+        {
+            CollectImagePrompts(section.Children[i], sectionIndex + 1 + i, slug, prompts);
+        }
     }
 }

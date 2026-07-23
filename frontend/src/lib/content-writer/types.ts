@@ -61,6 +61,7 @@ export interface ProjectSummary {
   department: string;
   status: ProjectStatus;
   preferredProvider: LlmProviderType;
+  useExactKeywordAsTitle: boolean;
   createdAtUtc: string;
 }
 

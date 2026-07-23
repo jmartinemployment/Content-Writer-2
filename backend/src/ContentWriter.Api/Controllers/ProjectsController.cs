@@ -54,7 +54,8 @@ public class ProjectsController : ControllerBase
             ProjectUrl = request.ProjectUrl,
             TargetKeyword = request.TargetKeyword,
             Department = request.Department,
-            PreferredProvider = request.PreferredProvider
+            PreferredProvider = request.PreferredProvider,
+            UseExactKeywordAsTitle = request.UseExactKeywordAsTitle
         };
 
         await _projectStore.AddAsync(project, cancellationToken);
@@ -102,10 +103,10 @@ public class ProjectsController : ControllerBase
 
         return Ok(new ProjectDetailResponse(
             project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department, project.Status,
-            project.PreferredProvider, crawl, keywordSources, generatedContent, contentSet));
+            project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet));
     }
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(
         project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department,
-        project.Status, project.PreferredProvider, project.CreatedAtUtc);
+        project.Status, project.PreferredProvider, project.UseExactKeywordAsTitle, project.CreatedAtUtc);
 }

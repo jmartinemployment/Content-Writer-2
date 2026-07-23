@@ -24,6 +24,7 @@ export default function ProjectForm({
   const [categories, setCategories] = useState<CategoryOption[] | null>(null);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [preferredProvider, setPreferredProvider] = useState<LlmProviderType>(defaultLlmProvider);
+  const [useExactKeywordAsTitle, setUseExactKeywordAsTitle] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +47,15 @@ export default function ProjectForm({
     setError(null);
     setIsSubmitting(true);
     try {
-      const project = await createProject({ clientId, name, projectUrl, targetKeyword, department, preferredProvider });
+      const project = await createProject({
+        clientId,
+        name,
+        projectUrl,
+        targetKeyword,
+        department,
+        preferredProvider,
+        useExactKeywordAsTitle,
+      });
       onCreated(project);
       setName("");
       setProjectUrl("");
@@ -140,6 +149,16 @@ export default function ProjectForm({
               LM Studio only works when the API runs on your machine. Use OpenAI or Anthropic on production.
             </span>
           )}
+        </label>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-foreground sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={useExactKeywordAsTitle}
+            onChange={(e) => setUseExactKeywordAsTitle(e.target.checked)}
+            className="h-4 w-4 rounded border-border text-brand focus:ring-2 focus:ring-brand/20"
+          />
+          Use exact keyword as title
         </label>
       </div>
 

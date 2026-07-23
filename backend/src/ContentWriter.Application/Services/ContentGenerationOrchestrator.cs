@@ -653,7 +653,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             BlogBaseUrl: _companyProfile.BlogBaseUrl,
             ToolBaseUrl: _companyProfile.ToolBaseUrl,
             ImplementerPositioning: _companyProfile.ImplementerPositioning,
-            Provider: project.PreferredProvider);
+            Provider: project.PreferredProvider,
+            UseExactKeywordAsTitle: project.UseExactKeywordAsTitle);
     }
 
     private static string CombineUrl(string baseUrl, string department, string slug) =>
@@ -677,7 +678,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             cancellationToken);
         var metadata = NormalizeMetadata(ParseJson<ArticleMetadataDraft>(metadataResult.Content, "TechnicalArticle metadata"));
         metadata = SanitizePlanMetadata(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
-        return PillarPlanMetadataNormalizer.Normalize(metadata, context.TargetKeyword);
+        metadata = PillarPlanMetadataNormalizer.Normalize(metadata, context.TargetKeyword);
+        return context.UseExactKeywordAsTitle ? metadata with { Title = context.TargetKeyword } : metadata;
     }
 
     private async Task<(ContentDocument Document, LedeType LedeType)> GenerateArticleBodyAsync(

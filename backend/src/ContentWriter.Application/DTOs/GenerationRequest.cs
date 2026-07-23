@@ -25,7 +25,8 @@ public record ProjectGenerationContext(
     string BlogBaseUrl,
     string ToolBaseUrl,
     string ImplementerPositioning,
-    LlmProviderType Provider);
+    LlmProviderType Provider,
+    bool UseExactKeywordAsTitle = false);
 
 public record TopicFocusResponse(string[]? Focus);
 

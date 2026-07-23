@@ -121,7 +121,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
     private const string LedeJsonContract =
         "{\"ledeType\": \"creative\"|\"summary\", \"heading\": string (a real written headline — never the literal words \"Creative Lead\"/\"Summary Lede\"), " +
-        "\"paragraphs\": [" + ParagraphJsonShape + ", ...]}";
+        "\"paragraphs\": [" + ParagraphJsonShape + ", ...], " +
+        "\"imagePrompt\": string (40-400 words describing an image to accompany this opening — subject, setting, style; no text/words rendered in the image)}";
 
     private static ChatCompletionRequest WithSectionSchema(ChatCompletionRequest request) =>
         ContentSectionJsonSchema.SectionSchema is { } schema
@@ -219,6 +220,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
             .AppendLine("Do NOT start with \"How\" or a question. 2-3 paragraphs: context and thesis for the article.")
+            .AppendLine("Also write imagePrompt: a prompt for an image-generation model to illustrate this opening.")
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
             .AppendLine(LedeJsonContract)
             .ToString();
@@ -384,6 +386,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write the opening lede for a schema.org BlogPosting deep-dive — conversational but substantive; first/second person allowed.")
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("2-3 paragraphs: hook, stakes, and who this is for.")
+            .AppendLine("Also write imagePrompt: a prompt for an image-generation model to illustrate this opening.")
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
             .AppendLine(LedeJsonContract)
             .ToString();

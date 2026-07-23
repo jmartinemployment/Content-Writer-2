@@ -211,7 +211,7 @@ public static class LlmResponseJsonParser
                     var ledeType = string.Equals(parsed.LedeType, "summary", StringComparison.OrdinalIgnoreCase)
                         ? LedeType.Summary
                         : LedeType.Creative;
-                    var section = Normalize(new Section("h2", parsed.Heading, parsed.Paragraphs ?? [], null, []));
+                    var section = Normalize(new Section("h2", parsed.Heading, parsed.Paragraphs ?? [], null, [], parsed.ImagePrompt));
                     ValidateContentHygiene(section, label);
                     return (section, ledeType);
                 }
@@ -228,7 +228,7 @@ public static class LlmResponseJsonParser
 
     private sealed record SectionsArrayResponse(List<Section>? Sections);
 
-    private sealed record LedeResponse(string? LedeType, string Heading, List<Paragraph>? Paragraphs);
+    private sealed record LedeResponse(string? LedeType, string Heading, List<Paragraph>? Paragraphs, string? ImagePrompt);
 
     /// <summary>
     /// System.Text.Json does not enforce non-null on a record's reference-typed constructor params —

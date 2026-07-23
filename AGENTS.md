@@ -15,3 +15,15 @@ The only durable output this app produces is `.html` committed directly to the g
 **Content shape (rewritten 2026-07-22):** the pipeline no longer touches Markdown or YAML anywhere. Content is authored by the LLM as structured `Section`/`Paragraph`/`Run` records (`ContentDocument` — see `ContentWriter.Domain.Entities.ContentDocument`), never as a markup or Markdown string — headings are plain-text fields, bold/italic/links are boolean/url fields on a `Run`, never `**`/`##`/`[text](url)` syntax. Export (`HtmlExportService`/`SectionHtmlRenderer`) builds a real DOM via HtmlAgilityPack and serializes it to a standalone `<!doctype html>` file — no YAML frontmatter, no Markdig, no re-parsing text to recover structure. `MdxExportService`, `MdxDocument`, `ArticleHtmlSectionExtractor`, `ToolsSectionHtmlParser`, and `HtmlBodyNormalizer` are gone; do not reintroduce Markdown/Markdig anywhere in this pipeline.
 
 Do not reintroduce EF Core, a DbContext, migrations, or an `IRepository<T>`-style abstraction. If in-process state needs to grow, extend `ProjectStore`/`ClientStore` directly.
+
+# Lede Section
+
+The lede is a `Section` (the first element of `ContentDocument.Lede`) — not a separate content type. It must have:
+- **Tag**: `"h2"` (always)
+- **Heading**: prose text based on lede type:
+  - **Summary**: a condensed summary of the article's overall topic
+  - **Surprise**: a hook or surprising fact that mirrors/complements the main topic
+  - **Question**: an opening question that sets up or frames the article's topic
+- **ImagePrompt** (optional): text that describes what image should accompany the lede
+
+Treat the lede as a regular Section throughout the pipeline — same structure, same export rules, no special handling.
