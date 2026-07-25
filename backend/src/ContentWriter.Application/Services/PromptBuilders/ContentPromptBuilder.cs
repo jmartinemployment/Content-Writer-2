@@ -290,8 +290,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: isRegeneration ? 0.72 : 0.65,
-            // Tools sections nest 4–6 platform h3s (each with list + h4 implementer child) as one
+            // Tools sections nest 4–5 platform h3s (each with list + h4 implementer child) as one
             // JSON object — 4096 truncates mid-JSON under that load; match tool-page body budget.
+            // Known limitation / preferred fix: see AGENTS.md "Pillar Tools section generation".
             MaxOutputTokens: isTools ? 8192 : 2048));
     }
 

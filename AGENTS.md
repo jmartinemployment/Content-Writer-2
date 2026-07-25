@@ -27,3 +27,10 @@ The lede is a `Section` (the first element of `ContentDocument.Lede`) — not a 
 - **ImagePrompt** (optional): text that describes what image should accompany the lede
 
 Treat the lede as a regular Section throughout the pipeline — same structure, same export rules, no special handling.
+
+# Pillar Tools section generation (known limitation)
+
+Pillar body generation already calls the LLM **once per top-level H2**. The Tools H2 is an exception in workload, not in call count: that single call must return one nested JSON `Section` containing 4–5 platform `h3` children (each with paragraphs, a list, and an `h4` implementer subtree). Structured JSON overhead means even a ~700–900 word Tools section can exceed a modest `MaxOutputTokens` budget and truncate mid-JSON (invalid parse → Step 2 failure). The current mitigation is a higher token ceiling (`8192` for Tools vs `2048` for other pillar sections) plus tighter platform-count guidance — that is a ceiling fix, not a design fix.
+
+**Preferred long-term approach:** generate one platform (or one child subtree) per LLM call and assemble them under the Tools H2 — same fine-grained pattern as the rest of the pillar — so a high per-call token budget is no longer required for that step. Do not treat raising `MaxOutputTokens` further as the primary solution if this shape keeps growing.
+
