@@ -172,24 +172,11 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         ContentDocument document,
         CancellationToken cancellationToken)
     {
-        const int maxAttempts = 2;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var result = await provider.CompleteAsync(
-                _promptBuilder.BuildToolMetadataPrompt(context, pillarMetadata, app, document),
-                cancellationToken);
-            try
-            {
-                return LlmResponseJsonParser.Parse<ToolMetadataDraft>(result.Content, "tool metadata");
-            }
-            catch (ContentGenerationException ex) when (attempt < maxAttempts)
-            {
-                _ = ex;
-            }
-        }
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildToolMetadataPrompt(context, pillarMetadata, app, document),
+            cancellationToken);
 
-        throw new ContentGenerationException(
-            $"Model did not return valid JSON for tool metadata for '{app.Name}' after {maxAttempts} attempts.");
+        return LlmResponseJsonParser.Parse<ToolMetadataDraft>(result.Content, "tool metadata");
     }
 
     /// <summary>Generates the tool page as a sections array; the first section (always "Overview")
@@ -206,72 +193,13 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         var result = await provider.CompleteAsync(
             _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
             cancellationToken);
-        // #region agent log
-        try
-        {
-            var content = result.Content ?? string.Empty;
-            var trimmed = content.TrimEnd();
-            var payload = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
-            {
-                ["sessionId"] = "d9194e",
-                ["hypothesisId"] = "A",
-                ["location"] = "ToolPageGenerator.GenerateToolBodyWithValidationAsync:afterComplete",
-                ["message"] = "tool body LLM response received",
-                ["data"] = new Dictionary<string, object?>
-                {
-                    ["appName"] = app.Name,
-                    ["modelUsed"] = result.ModelUsed,
-                    ["promptTokens"] = result.PromptTokens,
-                    ["completionTokens"] = result.CompletionTokens,
-                    ["maxOutputTokens"] = 8192,
-                    ["contentLength"] = content.Length,
-                    ["looksTruncated"] = content.Contains('{') && !trimmed.EndsWith('}') && !trimmed.EndsWith(']'),
-                    ["endsWith"] = trimmed.Length <= 100 ? trimmed : trimmed[^100..],
-                },
-                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            });
-            File.AppendAllText(
-                "/Users/jeffmartin/development/content-writer-v2/.cursor/debug-d9194e.log",
-                payload + "\n");
-        }
-        catch { /* debug only */ }
-        // #endregion
         var sections = LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'");
         var wordCount = ContentDocumentText.CountWords(sections);
-
-        const int maxExpansionPasses = 3;
-        for (var pass = 0; wordCount < ContentLengthTargets.ToolMinWords && pass < maxExpansionPasses; pass++)
-        {
-            var expansion = await provider.CompleteAsync(
-                _promptBuilder.BuildToolWordCountExpansionPrompt(context, app, sections, wordCount),
-                cancellationToken);
-            var expanded = LlmResponseJsonParser.ParseSections(expansion.Content, $"tool page expansion '{app.Name}'");
-            var expandedCount = ContentDocumentText.CountWords(expanded);
-            if (expandedCount > wordCount)
-            {
-                sections = expanded;
-                wordCount = expandedCount;
-            }
-        }
-
-        if (wordCount > ContentLengthTargets.ToolHardMaxWords)
-        {
-            var trim = await provider.CompleteAsync(
-                _promptBuilder.BuildToolWordCountTrimPrompt(context, app, sections, wordCount),
-                cancellationToken);
-            var trimmed = LlmResponseJsonParser.ParseSections(trim.Content, $"tool page trim '{app.Name}'");
-            var trimmedCount = ContentDocumentText.CountWords(trimmed);
-            if (trimmedCount < wordCount)
-            {
-                sections = trimmed;
-                wordCount = trimmedCount;
-            }
-        }
 
         if (wordCount < ContentLengthTargets.ToolMinWords || wordCount > ContentLengthTargets.ToolHardMaxWords)
         {
             throw new ContentGenerationException(
-                $"Tool page for '{app.Name}' is {wordCount:N0} words after retry; required range is " +
+                $"Tool page for '{app.Name}' is {wordCount:N0} words; required range is " +
                 $"{ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolHardMaxWords:N0}.");
         }
 

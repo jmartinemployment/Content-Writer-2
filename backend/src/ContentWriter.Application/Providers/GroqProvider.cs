@@ -10,7 +10,10 @@ namespace ContentWriter.Application.Providers;
 /// <summary>Talks to Groq's OpenAI-compatible Chat Completions API (https://api.groq.com/openai/v1/chat/completions) — cheap/fast Llama inference.</summary>
 public class GroqProvider : IContentGenerationProvider
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private readonly HttpClient _httpClient;
     private readonly GroqOptions _options;
@@ -49,7 +52,24 @@ public class GroqProvider : IContentGenerationProvider
             Model = model,
             Messages = request.Messages.Select(m => new OpenAiCompatibleMessage(m.RoleString, m.Content)).ToList(),
             Temperature = request.Temperature,
-            MaxTokens = request.MaxOutputTokens
+            MaxTokens = request.MaxOutputTokens,
+            // Groq's structured outputs share OpenAI's response_format contract, but strict:true
+            // (grammar-constrained, guaranteed schema compliance) is only supported on
+            // openai/gpt-oss-20b/120b — not this project's configured llama-3.3-70b-versatile.
+            // strict:false ("best-effort") is what's actually available on the configured model:
+            // the schema is a strong hint, not a hard guarantee. If the configured Groq model
+            // changes to one of the gpt-oss variants, flip this to true to match OpenAiProvider.
+            ResponseFormat = request.JsonSchema is null
+                ? null
+                : new OpenAiResponseFormat
+                {
+                    JsonSchema = new OpenAiJsonSchemaSpec
+                    {
+                        Name = request.JsonSchemaName ?? "response",
+                        Strict = false,
+                        Schema = System.Text.Json.Nodes.JsonNode.Parse(request.JsonSchema),
+                    },
+                },
         };
 
         // Rate-limit retries only — lower this if you'd rather fail fast than wait out Groq's free-tier TPM cap.

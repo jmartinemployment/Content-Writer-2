@@ -48,12 +48,6 @@ public interface IContentPromptBuilder
         int sectionIndex,
         int totalSections,
         string? revisionNotes = null);
-    ChatCompletionRequest BuildBlogDepthExpansionPrompt(
-        ProjectGenerationContext context,
-        ArticleDraft sourceArticle,
-        BlogMetadataDraft metadata,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount);
     ChatCompletionRequest BuildSocialPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string platform, string articleUrl);
     ChatCompletionRequest BuildColdOutreachPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string articleUrl);
     ChatCompletionRequest BuildSectionImagePromptsPrompt(
@@ -84,17 +78,6 @@ public interface IContentPromptBuilder
         string? metaDescription,
         string contentTypeLabel);
 
-    ChatCompletionRequest BuildToolWordCountExpansionPrompt(
-        ProjectGenerationContext context,
-        SchemaBuilders.SoftwareApplicationDescriptor app,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount);
-
-    ChatCompletionRequest BuildToolWordCountTrimPrompt(
-        ProjectGenerationContext context,
-        SchemaBuilders.SoftwareApplicationDescriptor app,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount);
 }
 
 public class ContentPromptBuilder : IContentPromptBuilder
@@ -130,20 +113,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
         "\"imagePrompt\": string (40-400 words describing an image to accompany this opening — subject, setting, style; no text/words rendered in the image)}";
 
     private static ChatCompletionRequest WithSectionSchema(ChatCompletionRequest request) =>
-        ContentSectionJsonSchema.SectionSchema is { } schema
-            ? request with { JsonSchemaName = "section", JsonSchema = schema }
-            : request;
+        request with { JsonSchemaName = "section", JsonSchema = ContentSectionJsonSchema.SectionSchema };
 
-    private static readonly JsonSerializerOptions ExpansionSerializerOptions = new(JsonSerializerDefaults.Web)
-    {
-        Converters = { new ParagraphJsonConverter() },
-    };
-
-    private static string SerializeForExpansion(Section section) =>
-        JsonSerializer.Serialize(section, ExpansionSerializerOptions);
-
-    private static string SerializeSectionsForExpansion(IReadOnlyList<Section> sections) =>
-        JsonSerializer.Serialize(sections, ExpansionSerializerOptions);
+    private static ChatCompletionRequest WithSectionsArraySchema(ChatCompletionRequest request) =>
+        request with { JsonSchemaName = "sections", JsonSchema = ContentSectionJsonSchema.SectionsArraySchema };
 
     public ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs)
     {
@@ -479,39 +452,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 4096));
     }
 
-    public ChatCompletionRequest BuildBlogDepthExpansionPrompt(
-        ProjectGenerationContext context,
-        ArticleDraft sourceArticle,
-        BlogMetadataDraft metadata,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount)
-    {
-        var wordsNeeded = ContentLengthTargets.BlogMinWords - currentWordCount;
-        var system = new StringBuilder()
-            .AppendLine("You are a senior content editor for an IT consulting firm.")
-            .AppendLine("Expand the blog sections below to meet the minimum word count without changing the title or removing existing sections.")
-            .AppendLine($"Editorial standard: {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Add depth inside each section: more paragraphs, an extra h3 child subsection, examples, and a list paragraph where appropriate.")
-            .AppendLine($"Current length: {currentWordCount:N0} words. Minimum required: {ContentLengthTargets.BlogMinWords:N0}. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
-            .AppendLine("Respond with ONLY the full expanded sections array — no markdown fences, no commentary:")
-            .AppendLine(SectionsArrayJsonContract)
-            .ToString();
-
-        var user = new StringBuilder()
-            .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine($"Blog title: {metadata.Title}")
-            .AppendLine($"Pillar reference: {sourceArticle.Title}")
-            .AppendLine()
-            .AppendLine("Current sections (JSON) to expand:")
-            .AppendLine(SerializeSectionsForExpansion(currentSections))
-            .ToString();
-
-        return new ChatCompletionRequest(
-            Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
-            Temperature: 0.65,
-            MaxOutputTokens: 8192);
-    }
-
     public ChatCompletionRequest BuildBlogBodyPrompt(
         ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata, string? revisionNotes = null)
     {
@@ -550,10 +490,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write the blog body sections. Summarize 2-3 key takeaways, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
             .ToString();
 
-        return new ChatCompletionRequest(
+        return WithSectionsArraySchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: 0.7,
-            MaxOutputTokens: 6144);
+            MaxOutputTokens: 6144));
     }
 
     public ChatCompletionRequest BuildSocialPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string platform, string articleUrl)
@@ -723,10 +663,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write expert third-person technical prose focused on this single platform.")
             .ToString();
 
-        return new ChatCompletionRequest(
+        return WithSectionsArraySchema(new ChatCompletionRequest(
             Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
             Temperature: 0.5,
-            MaxOutputTokens: 8192);
+            MaxOutputTokens: 8192));
     }
 
     public ChatCompletionRequest BuildToolMetadataPrompt(
@@ -787,65 +727,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
             Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
             Temperature: 0.55,
             MaxOutputTokens: 1024);
-    }
-
-    public ChatCompletionRequest BuildToolWordCountExpansionPrompt(
-        ProjectGenerationContext context,
-        SchemaBuilders.SoftwareApplicationDescriptor app,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount)
-    {
-        var wordsNeeded = ContentLengthTargets.ToolMinWords - currentWordCount;
-        var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Expand the tool page sections below to meet the minimum word count.")
-            .AppendLine("Respond with ONLY the full revised sections array — no markdown fences, no commentary:")
-            .AppendLine(SectionsArrayJsonContract)
-            .AppendLine("Preserve all existing section headings and structure; add substantive depth under each section.")
-            .AppendLine($"Minimum required: {ContentLengthTargets.ToolMinWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
-            .ToString();
-
-        var user = new StringBuilder()
-            .AppendLine($"Tool: {app.Name}")
-            .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine($"Current length: {currentWordCount:N0} words. Add at least {Math.Max(wordsNeeded, 400):N0} words of substantive material.")
-            .AppendLine()
-            .AppendLine("Current sections (JSON):")
-            .AppendLine(SerializeSectionsForExpansion(currentSections))
-            .ToString();
-
-        return new ChatCompletionRequest(
-            Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
-            Temperature: 0.45,
-            MaxOutputTokens: 8192);
-    }
-
-    public ChatCompletionRequest BuildToolWordCountTrimPrompt(
-        ProjectGenerationContext context,
-        SchemaBuilders.SoftwareApplicationDescriptor app,
-        IReadOnlyList<Section> currentSections,
-        int currentWordCount)
-    {
-        var system = new StringBuilder()
-            .AppendLine("You are a senior technical writer. Trim the tool page sections below to meet the maximum word count.")
-            .AppendLine("Respond with ONLY the full revised sections array — no markdown fences, no commentary:")
-            .AppendLine(SectionsArrayJsonContract)
-            .AppendLine("Preserve all existing section headings; tighten prose without losing key facts.")
-            .AppendLine($"Target range: {ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolTargetMaxWords:N0} words. Hard maximum: {ContentLengthTargets.ToolHardMaxWords:N0} words.")
-            .ToString();
-
-        var user = new StringBuilder()
-            .AppendLine($"Tool: {app.Name}")
-            .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine($"Current length: {currentWordCount:N0} words — trim to at most {ContentLengthTargets.ToolHardMaxWords:N0} words.")
-            .AppendLine()
-            .AppendLine("Current sections (JSON):")
-            .AppendLine(SerializeSectionsForExpansion(currentSections))
-            .ToString();
-
-        return new ChatCompletionRequest(
-            Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
-            Temperature: 0.35,
-            MaxOutputTokens: 8192);
     }
 
     /// <summary>

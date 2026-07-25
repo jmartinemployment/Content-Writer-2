@@ -10,7 +10,10 @@ namespace ContentWriter.Application.Providers;
 /// <summary>Talks to the OpenAI Chat Completions API (https://api.openai.com/v1/chat/completions).</summary>
 public class OpenAiProvider : IContentGenerationProvider
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
@@ -43,7 +46,18 @@ public class OpenAiProvider : IContentGenerationProvider
             Model = request.Model ?? _options.Model,
             Messages = request.Messages.Select(m => new OpenAiCompatibleMessage(m.RoleString, m.Content)).ToList(),
             Temperature = request.Temperature,
-            MaxTokens = request.MaxOutputTokens
+            MaxTokens = request.MaxOutputTokens,
+            ResponseFormat = request.JsonSchema is null
+                ? null
+                : new OpenAiResponseFormat
+                {
+                    JsonSchema = new OpenAiJsonSchemaSpec
+                    {
+                        Name = request.JsonSchemaName ?? "response",
+                        Strict = true,
+                        Schema = System.Text.Json.Nodes.JsonNode.Parse(request.JsonSchema),
+                    },
+                },
         };
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.BaseUrl)

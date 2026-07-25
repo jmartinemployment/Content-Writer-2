@@ -346,28 +346,10 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         RemoveGeneratedContents(project, GeneratedContentType.EmailColdOutreach);
 
-        const int maxAttempts = 2;
-        ColdOutreachEmailDraft? draft = null;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var result = await provider.CompleteAsync(
-                _promptBuilder.BuildColdOutreachPrompt(context, article, articleUrl),
-                cancellationToken);
-            try
-            {
-                draft = LlmResponseJsonParser.ParseColdOutreach(result.Content, "cold outreach email");
-                break;
-            }
-            catch (ContentGenerationException ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "Retrying cold outreach after invalid JSON (attempt {Attempt})", attempt);
-            }
-        }
-
-        if (draft is null)
-        {
-            throw new ContentGenerationException($"Model did not return valid JSON for cold outreach email after {maxAttempts} attempts.");
-        }
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildColdOutreachPrompt(context, article, articleUrl),
+            cancellationToken);
+        var draft = LlmResponseJsonParser.ParseColdOutreach(result.Content, "cold outreach email");
 
         var wordCount = draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
@@ -439,29 +421,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             projectId,
             provider.ProviderType);
 
-        const int maxAttempts = 3;
-        ImagePromptSectionPromptsDraft? draft = null;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var result = await provider.CompleteAsync(
-                _promptBuilder.BuildSectionImagePromptsPrompt(
-                    context, article, blog, articleUrl, blogUrl, sections),
-                cancellationToken);
-            try
-            {
-                draft = LlmResponseJsonParser.ParseSectionImagePrompts(result.Content, sections, "image prompts");
-                break;
-            }
-            catch (ContentGenerationException ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "Retrying image prompts after invalid JSON (attempt {Attempt})", attempt);
-            }
-        }
-
-        if (draft is null)
-        {
-            throw new ContentGenerationException($"Model did not return valid JSON for image prompts after {maxAttempts} attempts.");
-        }
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildSectionImagePromptsPrompt(
+                context, article, blog, articleUrl, blogUrl, sections),
+            cancellationToken);
+        var draft = LlmResponseJsonParser.ParseSectionImagePrompts(result.Content, sections, "image prompts");
 
         // Only remove existing rows for the sections we're about to replace, and only now that
         // generation has actually succeeded — a failed/retried-out run must never destroy image
@@ -775,8 +739,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                     context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration, revisionNotes),
                 cancellationToken);
 
-            sections.Add(LlmResponseJsonParser.ParseSection(
-                sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'"));
+            sections.Add(LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'"));
         }
 
         if (faqQuestions.Count > 0)
@@ -787,8 +750,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 _promptBuilder.BuildArticleFaqSectionPrompt(context, metadata, faqQuestions, isRegeneration, revisionNotes),
                 cancellationToken);
 
-            sections.Add(LlmResponseJsonParser.ParseSection(
-                faqResult.Content, "h2", "TechnicalArticle FAQ section"));
+            sections.Add(LlmResponseJsonParser.ParseSection(faqResult.Content, "h2", "TechnicalArticle FAQ section"));
         }
 
         return (new ContentDocument(lede, sections), ledeType);
@@ -840,31 +802,13 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var sections = await GenerateBlogBodyAsync(provider, context, article, metadata, revisionNotes, cancellationToken);
         var wordCount = ContentDocumentText.CountWords(sections);
 
-        const int maxExpansionPasses = 3;
-        for (var pass = 0; wordCount < ContentLengthTargets.BlogMinWords && pass < maxExpansionPasses; pass++)
+        if (wordCount < ContentLengthTargets.BlogMinWords)
         {
             _logger.LogWarning(
-                "Blog draft for project keyword \"{Keyword}\" is {Count} words (minimum {Minimum}); running expansion pass {Pass}/{Max}.",
+                "Blog draft for project keyword \"{Keyword}\" is {Count} words (minimum {Minimum}) — no expansion pass, single attempt only.",
                 context.TargetKeyword,
                 wordCount,
-                ContentLengthTargets.BlogMinWords,
-                pass + 1,
-                maxExpansionPasses);
-
-            var expansionResult = await provider.CompleteAsync(
-                pass == 0
-                    ? _promptBuilder.BuildBlogBodyPrompt(context, article, metadata, revisionNotes)
-                    : _promptBuilder.BuildBlogDepthExpansionPrompt(context, article, metadata, sections, wordCount),
-                cancellationToken);
-            var expandedSections = LlmResponseJsonParser.ParseSections(
-                expansionResult.Content,
-                pass == 0 ? "BlogPosting expansion body" : "BlogPosting depth expansion");
-            var expandedCount = ContentDocumentText.CountWords(expandedSections);
-            if (expandedCount > wordCount)
-            {
-                sections = expandedSections.ToList();
-                wordCount = expandedCount;
-            }
+                ContentLengthTargets.BlogMinWords);
         }
 
         var draft = new BlogDraft(
@@ -909,7 +853,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 sections.Count,
                 heading);
 
-            var section = await GenerateBlogSectionWithRetryAsync(
+            var section = await GenerateBlogSectionAsync(
                 provider, context, article, metadata, heading, i, sections.Count, revisionNotes, cancellationToken);
             parts.Add(section);
         }
@@ -917,7 +861,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return parts;
     }
 
-    private async Task<Section> GenerateBlogSectionWithRetryAsync(
+    private async Task<Section> GenerateBlogSectionAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleDraft article,
@@ -928,29 +872,22 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         string? revisionNotes,
         CancellationToken cancellationToken)
     {
+        var sectionResult = await provider.CompleteAsync(
+            _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections, revisionNotes),
+            cancellationToken);
+
+        var section = LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"BlogPosting section '{heading}'");
+
         var sectionMin = (int)(ContentLengthTargets.BlogSectionMinWords * 0.85);
-        Section? bestSection = null;
-
-        for (var attempt = 0; attempt < 2; attempt++)
+        if (ContentDocumentText.CountWords(section) < sectionMin)
         {
-            var sectionResult = await provider.CompleteAsync(
-                _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections, revisionNotes),
-                cancellationToken);
-
-            var section = LlmResponseJsonParser.ParseSection(
-                sectionResult.Content, "h2", $"BlogPosting section '{heading}'");
-            bestSection = section;
-
-            if (ContentDocumentText.CountWords(section) >= sectionMin || attempt == 1)
-                return section;
-
             _logger.LogWarning(
-                "Blog section \"{Heading}\" is under {Minimum} words; retrying with stricter depth instructions.",
+                "Blog section \"{Heading}\" is under {Minimum} words — no retry, single attempt only.",
                 heading,
                 sectionMin);
         }
 
-        return bestSection!;
+        return section;
     }
 
     private static BlogMetadataDraft EnsureBlogSectionOutline(BlogMetadataDraft metadata)
@@ -986,26 +923,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         string platform,
         CancellationToken cancellationToken)
     {
-        const int maxAttempts = 2;
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildSocialPrompt(context, article, platform, articleUrl),
+            cancellationToken);
 
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var result = await provider.CompleteAsync(
-                _promptBuilder.BuildSocialPrompt(context, article, platform, articleUrl),
-                cancellationToken);
-
-            try
-            {
-                var text = LlmResponseJsonParser.ParseSocialText(result.Content, articleUrl, $"{platform} post");
-                return new SocialPostDraft(platform, text);
-            }
-            catch (ContentGenerationException ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "Retrying {Platform} post generation after invalid JSON (attempt {Attempt})", platform, attempt);
-            }
-        }
-
-        throw new ContentGenerationException($"Model did not return valid JSON for {platform} post after {maxAttempts} attempts.");
+        var text = LlmResponseJsonParser.ParseSocialText(result.Content, articleUrl, $"{platform} post");
+        return new SocialPostDraft(platform, text);
     }
 
     private async Task<SummaryVariantsDraft> GenerateSummaryVariantsAsync(
@@ -1017,25 +940,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         string contentTypeLabel,
         CancellationToken cancellationToken)
     {
-        const int maxAttempts = 2;
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildSummaryVariantsPrompt(context, title, body, metaDescription, contentTypeLabel),
+            cancellationToken);
 
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var result = await provider.CompleteAsync(
-                _promptBuilder.BuildSummaryVariantsPrompt(context, title, body, metaDescription, contentTypeLabel),
-                cancellationToken);
-
-            try
-            {
-                return LlmResponseJsonParser.Parse<SummaryVariantsDraft>(result.Content, "summary variants");
-            }
-            catch (ContentGenerationException ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "Retrying summary variants generation after invalid JSON (attempt {Attempt})", attempt);
-            }
-        }
-
-        throw new ContentGenerationException($"Model did not return valid JSON for summary variants after {maxAttempts} attempts.");
+        return LlmResponseJsonParser.Parse<SummaryVariantsDraft>(result.Content, "summary variants");
     }
 
     private T ParseJson<T>(string rawContent, string label)

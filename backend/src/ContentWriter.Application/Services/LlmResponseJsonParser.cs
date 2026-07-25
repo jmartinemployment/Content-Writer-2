@@ -10,7 +10,10 @@ namespace ContentWriter.Application.Services;
 public static class LlmResponseJsonParser
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly JsonSerializerOptions SectionJsonOptions = CreateSectionJsonOptions();
+    /// <summary>internal (not private) so <see cref="ContentSectionJsonSchema"/> can generate the
+    /// provider-facing schema from these exact options — the single source of truth for the real
+    /// deserialization contract, so the schema can never silently drift from it.</summary>
+    internal static readonly JsonSerializerOptions SectionJsonOptions = CreateSectionJsonOptions();
     private static readonly Regex MarkdownFence = new(@"^```(?:json|html)?\s*|\s*```$", RegexOptions.Multiline | RegexOptions.Compiled);
     private static readonly Regex MarkdownLink = new(@"\[([^\]]*)\]\(([^)]+)\)", RegexOptions.Compiled);
 
@@ -23,7 +26,12 @@ public static class LlmResponseJsonParser
 
     private static JsonSerializerOptions CreateSectionJsonOptions()
     {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            // JsonSchemaExporter (used by ContentSectionJsonSchema) requires an explicit
+            // TypeInfoResolver — reflection-based resolution isn't picked up implicitly for it.
+            TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+        };
         options.Converters.Add(new ParagraphJsonConverter());
         return options;
     }
@@ -37,6 +45,7 @@ public static class LlmResponseJsonParser
     public static Section ParseSection(string rawContent, string expectedTag, string label)
     {
         var cleaned = Clean(rawContent);
+        var failures = new List<string>();
 
         foreach (var candidate in CandidateJsonStrings(cleaned))
         {
@@ -49,15 +58,30 @@ public static class LlmResponseJsonParser
                     ValidateContentHygiene(normalized, label);
                     return normalized;
                 }
+
+                failures.Add($"deserialized but heading was empty (candidate length {candidate.Length})");
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // Try the next repaired candidate.
+                failures.Add($"JsonException at byte {ex.BytePositionInLine} (path {ex.Path}): {ex.Message}");
             }
         }
 
+        // Full raw content (not just the first 200 chars) so a recurrence can actually be diagnosed
+        // instead of re-guessing — every candidate's failure reason is captured too.
+        AgentDebugLog("F", "LlmResponseJsonParser.ParseSection:allCandidatesFailed", label, new Dictionary<string, object?>
+        {
+            ["rawContent"] = rawContent,
+            ["cleanedLength"] = cleaned.Length,
+            ["candidateFailures"] = failures,
+        });
+
+        var trimmedEnd = cleaned.TrimEnd();
+        var isTruncated = cleaned.Length > 0 && !trimmedEnd.EndsWith('}') && !trimmedEnd.EndsWith(']');
+        var hint = isTruncated ? " The response looks truncated — it may have hit the max output token limit." : string.Empty;
+
         throw new ContentGenerationException(
-            $"Model did not return a valid structured section for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+            $"Model did not return a valid structured section for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}.{hint}");
     }
 
     /// <summary>Parses a top-level sections array (whole-body regeneration/expansion responses).</summary>
@@ -574,16 +598,79 @@ public static class LlmResponseJsonParser
 
     private static string Clean(string rawContent) => MarkdownFence.Replace(rawContent, string.Empty).Trim();
 
+    /// <summary>
+    /// Finds the first "{" or "[" and scans for its actual matching close (tracking nesting depth
+    /// across both bracket types and skipping over brackets inside string literals) rather than
+    /// naively grabbing through the last "}" anywhere in the response. A model that appends any
+    /// trailing text after valid JSON — a closing remark, an aside that happens to contain a brace
+    /// or bracket character — would otherwise get that trailing content spliced into the "JSON"
+    /// handed to the deserializer, breaking parsing even though the actual JSON was well-formed.
+    /// Returns null if no balanced close is found (e.g. the response was genuinely truncated
+    /// mid-object/mid-array).
+    /// </summary>
     private static string? ExtractJsonObject(string raw)
     {
-        var start = raw.IndexOf('{');
-        var end = raw.LastIndexOf('}');
-        if (start < 0 || end <= start)
+        var start = -1;
+        for (var i = 0; i < raw.Length; i++)
+        {
+            if (raw[i] is '{' or '[')
+            {
+                start = i;
+                break;
+            }
+        }
+
+        if (start < 0)
         {
             return null;
         }
 
-        return raw[start..(end + 1)];
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+
+        for (var i = start; i < raw.Length; i++)
+        {
+            var ch = raw[i];
+
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\' && inString)
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+            {
+                continue;
+            }
+
+            if (ch is '{' or '[')
+            {
+                depth++;
+            }
+            else if (ch is '}' or ']')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return raw[start..(i + 1)];
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string RepairLiteralNewlinesInJsonStrings(string json)

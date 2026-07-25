@@ -10,7 +10,10 @@ namespace ContentWriter.Application.Providers;
 /// <summary>Talks to the Anthropic Messages API (https://api.anthropic.com/v1/messages).</summary>
 public class AnthropicProvider : IContentGenerationProvider
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private readonly HttpClient _httpClient;
     private readonly AnthropicOptions _options;
@@ -54,8 +57,27 @@ public class AnthropicProvider : IContentGenerationProvider
             System = string.IsNullOrEmpty(systemPrompt) ? null : systemPrompt,
             Messages = turnMessages,
             MaxTokens = request.MaxOutputTokens,
-            Temperature = request.Temperature
+            Temperature = request.Temperature,
         };
+
+        // Anthropic has no response_format/json_schema mode — structured output is done via forced
+        // tool-use: define a single tool whose input_schema is the desired shape, force tool_choice
+        // to it, and read the already-parsed JSON back out of the tool_use content block's "input"
+        // (not a string to parse — the API returns it as a real JSON value).
+        var usingSchema = request.JsonSchema is not null;
+        if (usingSchema)
+        {
+            var schemaName = request.JsonSchemaName ?? "response";
+            payload.Tools =
+            [
+                new AnthropicTool
+                {
+                    Name = schemaName,
+                    InputSchema = System.Text.Json.Nodes.JsonNode.Parse(request.JsonSchema!),
+                },
+            ];
+            payload.ToolChoice = new AnthropicToolChoice { Type = "tool", Name = schemaName };
+        }
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.BaseUrl)
         {
@@ -85,11 +107,24 @@ public class AnthropicProvider : IContentGenerationProvider
         var parsed = JsonSerializer.Deserialize<AnthropicResponse>(body, JsonOptions)
             ?? throw new ContentGenerationException("Anthropic returned an empty/unparseable response.");
 
-        var textBlock = parsed.Content.FirstOrDefault(c => c.Type == "text")
-            ?? throw new ContentGenerationException("Anthropic response contained no text content block.");
+        string content;
+        if (usingSchema)
+        {
+            var toolUseBlock = parsed.Content.FirstOrDefault(c => c.Type == "tool_use")
+                ?? throw new ContentGenerationException("Anthropic response contained no tool_use content block.");
+            // Input is already a parsed JSON value (not a string) — GetRawText() hands back the
+            // exact JSON text the API returned, with no extra serialization round-trip.
+            content = toolUseBlock.Input?.GetRawText() ?? string.Empty;
+        }
+        else
+        {
+            var textBlock = parsed.Content.FirstOrDefault(c => c.Type == "text")
+                ?? throw new ContentGenerationException("Anthropic response contained no text content block.");
+            content = textBlock.Text ?? string.Empty;
+        }
 
         return new ChatCompletionResult(
-            Content: textBlock.Text ?? string.Empty,
+            Content: content,
             ModelUsed: parsed.Model ?? _options.Model,
             PromptTokens: parsed.Usage?.InputTokens,
             CompletionTokens: parsed.Usage?.OutputTokens);
@@ -102,6 +137,20 @@ public class AnthropicProvider : IContentGenerationProvider
         [JsonPropertyName("messages")] public List<AnthropicMessage> Messages { get; set; } = new();
         [JsonPropertyName("max_tokens")] public int MaxTokens { get; set; }
         [JsonPropertyName("temperature")] public double Temperature { get; set; }
+        [JsonPropertyName("tools")] public List<AnthropicTool>? Tools { get; set; }
+        [JsonPropertyName("tool_choice")] public AnthropicToolChoice? ToolChoice { get; set; }
+    }
+
+    private sealed class AnthropicTool
+    {
+        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+        [JsonPropertyName("input_schema")] public System.Text.Json.Nodes.JsonNode? InputSchema { get; set; }
+    }
+
+    private sealed class AnthropicToolChoice
+    {
+        [JsonPropertyName("type")] public string Type { get; set; } = "auto";
+        [JsonPropertyName("name")] public string? Name { get; set; }
     }
 
     private sealed record AnthropicMessage(
@@ -119,6 +168,7 @@ public class AnthropicProvider : IContentGenerationProvider
     {
         [JsonPropertyName("type")] public string Type { get; set; } = string.Empty;
         [JsonPropertyName("text")] public string? Text { get; set; }
+        [JsonPropertyName("input")] public JsonElement? Input { get; set; }
     }
 
     private sealed class AnthropicUsage
