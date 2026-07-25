@@ -47,6 +47,20 @@ public class ContentDocumentTests
     }
 
     [Fact]
+    public void FromPlainText_Flatten_returns_body_once_without_truncated_heading_prefix()
+    {
+        var body =
+            "Hi there,\n\nNavigating tax compliance can be complex and time-consuming, but AI-driven solutions are changing the game.";
+
+        var document = ContentDocumentText.FromPlainText(body);
+        var flat = ContentDocumentText.Flatten(document);
+
+        Assert.Equal(body, flat);
+        Assert.DoesNotContain("AI-d\nHi there", flat.Replace("\r\n", "\n"));
+        Assert.Equal(string.Empty, document.Lede.Heading);
+    }
+
+    [Fact]
     public void Flatten_never_reintroduces_markup_characters()
     {
         var section = MakeSection("h2", "Heading text", "Body text with an inline run");

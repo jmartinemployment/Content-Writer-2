@@ -10,9 +10,11 @@ namespace ContentWriter.Application.Services;
 public static class ContentDocumentText
 {
     /// <summary>Wraps flat text (social posts, emails, image-gen prompts) as a degenerate document —
-    /// same shape as sectioned content, lede-only, no further sections. See design plan §1.</summary>
+    /// same shape as sectioned content, lede-only, no further sections. Heading is left empty so
+    /// <see cref="Flatten"/> / HTML export do not duplicate a truncated prefix of the body
+    /// (plain-text rows store the whole payload in the lede paragraph only).</summary>
     public static ContentDocument FromPlainText(string text) => new(
-        new Section("h2", text.Length > 80 ? text[..80] : text, [new TextParagraph([new Run(text)])], null, []),
+        new Section("h2", string.Empty, [new TextParagraph([new Run(text)])], null, []),
         []);
 
     public static string Flatten(ContentDocument? document)
