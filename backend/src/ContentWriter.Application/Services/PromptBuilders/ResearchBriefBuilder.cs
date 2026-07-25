@@ -9,7 +9,10 @@ internal enum ResearchBriefPhase
     ArticleMetadata,
     ArticleBody,
     ArticleSection,
-    ArticleFaq
+    ArticleFaq,
+    Review,
+    BlogSection,
+    ToolBody
 }
 
 /// <summary>
@@ -52,6 +55,20 @@ internal static class ResearchBriefBuilder
                 break;
 
             case ResearchBriefPhase.ArticleFaq:
+                AppendAuthoritativeSourcesBrief(sb, context);
+                break;
+
+            case ResearchBriefPhase.Review:
+                AppendAuthoritativeSourcesBrief(sb, context);
+                AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 4, maxParagraphsPerFile: 1);
+                break;
+
+            case ResearchBriefPhase.BlogSection:
+                AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 3, maxParagraphsPerFile: 1);
+                AppendAuthoritativeSourcesBrief(sb, context);
+                break;
+
+            case ResearchBriefPhase.ToolBody:
                 AppendAuthoritativeSourcesBrief(sb, context);
                 break;
         }

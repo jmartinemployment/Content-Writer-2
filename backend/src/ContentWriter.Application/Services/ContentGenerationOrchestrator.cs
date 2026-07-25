@@ -88,7 +88,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return Assemble(project);
     }
 
-    public async Task<GeneratedContentSet> GeneratePillarBodyAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<GeneratedContentSet> GeneratePillarBodyAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
         var articleRow = RequireGeneratedContent(project, GeneratedContentType.TechnicalArticle,
@@ -109,7 +109,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             "Generating pillar body for project {ProjectId} via {Provider} (regeneration={IsRegeneration}, faqCount={FaqCount})",
             projectId, provider.ProviderType, isRegeneration, faqQuestions.Count);
 
-        var (document, ledeType) = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, cancellationToken);
+        var (document, ledeType) = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, revisionNotes, cancellationToken);
         var wordCount = ContentDocumentText.CountWords(document);
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
@@ -143,11 +143,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     public async Task<GeneratedContentSet> GeneratePillarAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         await GeneratePillarPlanAsync(projectId, cancellationToken);
-        await GeneratePillarBodyAsync(projectId, cancellationToken);
-        return await GenerateToolPagesAsync(projectId, cancellationToken);
+        await GeneratePillarBodyAsync(projectId, revisionNotes: null, cancellationToken);
+        return await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken);
     }
 
-    public async Task<GeneratedContentSet> GenerateToolPagesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<GeneratedContentSet> GenerateToolPagesAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
         var articleRow = RequireCompletePillar(project);
@@ -167,6 +167,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             context,
             provider,
             articleUrl,
+            revisionNotes,
             cancellationToken);
 
         foreach (var toolRow in generation.ToolPosts)
@@ -199,7 +200,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return Assemble(project);
     }
 
-    public async Task<GeneratedContentSet> GenerateBlogAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<GeneratedContentSet> GenerateBlogAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
         var articleRow = RequireCompletePillar(project);
@@ -213,7 +214,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
 
-        var (blogDraft, ledeType) = await GenerateBlogDraftAsync(provider, context, article, cancellationToken);
+        var (blogDraft, ledeType) = await GenerateBlogDraftAsync(provider, context, article, revisionNotes, cancellationToken);
         var blogSlug = SlugHelper.Slugify(blogDraft.Title);
         var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
 
@@ -371,7 +372,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return Assemble(project);
     }
 
-    public async Task<GeneratedContentSet> GenerateImagePromptsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<GeneratedContentSet> GenerateImagePromptsAsync(
+        Guid projectId, IReadOnlySet<string>? sectionHeadingsToTest = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
         var articleRow = RequireCompletePillar(project);
@@ -390,16 +392,28 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             .Select(c => string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.Title : c.DisplayTitle!)
             .ToList();
 
-        var sections = ContentDocumentText.BuildSectionTargets(
+        var allSections = ContentDocumentText.BuildSectionTargets(
             articleRow.DisplayTitle ?? articleRow.Title,
             articleRow.Body,
             blogRow.DisplayTitle ?? blogRow.Title,
             blogRow.Body,
             toolTitles);
-        if (sections.Count == 0)
+        if (allSections.Count == 0)
         {
             throw new ContentGenerationException(
                 "Pillar and blog must each include at least one top-level section before generating image prompts.");
+        }
+
+        // Scoped to a subset (e.g. only the sections a prior run failed to produce) when
+        // sectionHeadingsToTest is supplied — mirrors ReviewLoopService's toolSlugToTest pattern.
+        // A full re-run (no filter) still regenerates every section, same as before.
+        var sections = sectionHeadingsToTest is null or { Count: 0 }
+            ? allSections
+            : allSections.Where(s => sectionHeadingsToTest.Contains(s.Heading, StringComparer.OrdinalIgnoreCase)).ToList();
+        if (sections.Count == 0)
+        {
+            throw new ContentGenerationException(
+                "None of the requested section headings match the pillar/blog/tool outline.");
         }
 
         _logger.LogInformation(
@@ -407,13 +421,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             sections.Count,
             projectId,
             provider.ProviderType);
-
-        RemoveGeneratedContents(project,
-            GeneratedContentType.ImagePromptPillarFigure,
-            GeneratedContentType.ImagePromptBlogFigure,
-            GeneratedContentType.ImagePromptSocialFacebook,
-            GeneratedContentType.ImagePromptSocialLinkedIn,
-            GeneratedContentType.ImagePromptSection);
 
         const int maxAttempts = 3;
         ImagePromptSectionPromptsDraft? draft = null;
@@ -439,6 +446,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             throw new ContentGenerationException($"Model did not return valid JSON for image prompts after {maxAttempts} attempts.");
         }
 
+        // Only remove existing rows for the sections we're about to replace, and only now that
+        // generation has actually succeeded — a failed/retried-out run must never destroy image
+        // prompts that were already generated successfully in a prior run.
+        RemoveImagePromptRowsForSections(project, articleRow.Slug, sections);
+
         foreach (var section in draft.Sections)
         {
             await AddSectionImagePromptRowAsync(
@@ -457,12 +469,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     public async Task<GeneratedContentSet> GenerateAllAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         await GeneratePillarPlanAsync(projectId, cancellationToken);
-        await GeneratePillarBodyAsync(projectId, cancellationToken);
-        await GenerateToolPagesAsync(projectId, cancellationToken);
-        await GenerateBlogAsync(projectId, cancellationToken);
+        await GeneratePillarBodyAsync(projectId, revisionNotes: null, cancellationToken);
+        await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken);
+        await GenerateBlogAsync(projectId, revisionNotes: null, cancellationToken);
         await GenerateSocialAsync(projectId, cancellationToken);
         await GenerateColdOutreachAsync(projectId, cancellationToken);
-        return await GenerateImagePromptsAsync(projectId, cancellationToken);
+        return await GenerateImagePromptsAsync(projectId, sectionHeadingsToTest: null, cancellationToken);
     }
 
     private async Task<Project> LoadProjectForGenerationAsync(Guid projectId, CancellationToken cancellationToken)
@@ -551,17 +563,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         ImagePromptSectionDraft item,
         CancellationToken cancellationToken)
     {
-        var isPillarHero = item.SourceType.Equals("pillar-hero", StringComparison.OrdinalIgnoreCase);
-        var isBlogHero = item.SourceType.Equals("blog-hero", StringComparison.OrdinalIgnoreCase);
-        var headingSlug = SlugHelper.Slugify(item.Heading);
+        var (contentType, slug) = ImagePromptSectionIdentity(articleSlug, item.SourceType, item.Heading);
         var wordCount = item.Prompt.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-
-        var contentType = isPillarHero ? GeneratedContentType.ImagePromptPillarFigure
-            : isBlogHero ? GeneratedContentType.ImagePromptBlogFigure
-            : GeneratedContentType.ImagePromptSection;
-        var slug = isPillarHero || isBlogHero
-            ? $"{articleSlug}-{item.SourceType}"
-            : $"{articleSlug}-{item.SourceType}-h2-{headingSlug}";
 
         await AddContentAsync(project, providerType, new GeneratedContent
         {
@@ -578,6 +581,46 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }, cancellationToken);
     }
 
+    /// <summary>Same (contentType, slug) derivation used both when writing a new image-prompt row
+    /// and when identifying which existing row a regenerated target should replace.</summary>
+    private static (GeneratedContentType ContentType, string Slug) ImagePromptSectionIdentity(
+        string articleSlug, string sourceType, string heading)
+    {
+        var isPillarHero = sourceType.Equals("pillar-hero", StringComparison.OrdinalIgnoreCase);
+        var isBlogHero = sourceType.Equals("blog-hero", StringComparison.OrdinalIgnoreCase);
+        var headingSlug = SlugHelper.Slugify(heading);
+
+        var contentType = isPillarHero ? GeneratedContentType.ImagePromptPillarFigure
+            : isBlogHero ? GeneratedContentType.ImagePromptBlogFigure
+            : GeneratedContentType.ImagePromptSection;
+        var slug = isPillarHero || isBlogHero
+            ? $"{articleSlug}-{sourceType}"
+            : $"{articleSlug}-{sourceType}-h2-{headingSlug}";
+
+        return (contentType, slug);
+    }
+
+    /// <summary>Removes only the existing image-prompt rows matching the given targets, leaving
+    /// every other image-prompt row (from sections not currently being regenerated) untouched.</summary>
+    private void RemoveImagePromptRowsForSections(Project project, string articleSlug, IReadOnlyList<ImagePromptSectionTarget> sections)
+    {
+        var slugsToReplace = sections
+            .Select(s => ImagePromptSectionIdentity(articleSlug, s.SourceType, s.Heading).Slug)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toRemove = project.GeneratedContents
+            .Where(c => c.ContentType is GeneratedContentType.ImagePromptPillarFigure
+                or GeneratedContentType.ImagePromptBlogFigure
+                or GeneratedContentType.ImagePromptSection)
+            .Where(c => slugsToReplace.Contains(c.Slug))
+            .ToList();
+
+        foreach (var row in toRemove)
+        {
+            project.GeneratedContents.Remove(row);
+        }
+    }
+
     private Task SaveProjectAsync(Project project, ProjectStatus status, CancellationToken cancellationToken)
     {
         project.Status = status;
@@ -589,7 +632,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         GeneratedContentSetAssembler.Assemble(
             project, project.Department, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
 
-    private ProjectGenerationContext BuildContext(Project project)
+    public ProjectGenerationContext BuildContext(Project project)
     {
         var crawl = project.CrawledSite!;
         var keywordSummaries = project.KeywordSources
@@ -688,6 +731,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> faqQuestions,
         bool isRegeneration,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Generating pillar lede");
@@ -711,7 +755,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
             var sectionResult = await provider.CompleteAsync(
                 _promptBuilder.BuildArticleSectionPrompt(
-                    context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration),
+                    context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration, revisionNotes),
                 cancellationToken);
 
             sections.Add(LlmResponseJsonParser.ParseSection(
@@ -723,7 +767,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             _logger.LogInformation("Generating pillar FAQ section ({Count} questions)", faqQuestions.Count);
 
             var faqResult = await provider.CompleteAsync(
-                _promptBuilder.BuildArticleFaqSectionPrompt(context, metadata, faqQuestions, isRegeneration),
+                _promptBuilder.BuildArticleFaqSectionPrompt(context, metadata, faqQuestions, isRegeneration, revisionNotes),
                 cancellationToken);
 
             sections.Add(LlmResponseJsonParser.ParseSection(
@@ -761,6 +805,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
         ArticleDraft article,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         var metadataResult = await provider.CompleteAsync(
@@ -775,7 +820,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             cancellationToken);
         var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "BlogPosting lede");
 
-        var sections = await GenerateBlogBodyAsync(provider, context, article, metadata, cancellationToken);
+        var sections = await GenerateBlogBodyAsync(provider, context, article, metadata, revisionNotes, cancellationToken);
         var wordCount = ContentDocumentText.CountWords(sections);
 
         const int maxExpansionPasses = 3;
@@ -791,7 +836,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
             var expansionResult = await provider.CompleteAsync(
                 pass == 0
-                    ? _promptBuilder.BuildBlogBodyPrompt(context, article, metadata)
+                    ? _promptBuilder.BuildBlogBodyPrompt(context, article, metadata, revisionNotes)
                     : _promptBuilder.BuildBlogDepthExpansionPrompt(context, article, metadata, sections, wordCount),
                 cancellationToken);
             var expandedSections = LlmResponseJsonParser.ParseSections(
@@ -821,6 +866,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         ProjectGenerationContext context,
         ArticleDraft article,
         BlogMetadataDraft metadata,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         var sections = metadata.SectionOutline.Count > 0
@@ -847,7 +893,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 heading);
 
             var section = await GenerateBlogSectionWithRetryAsync(
-                provider, context, article, metadata, heading, i, sections.Count, cancellationToken);
+                provider, context, article, metadata, heading, i, sections.Count, revisionNotes, cancellationToken);
             parts.Add(section);
         }
 
@@ -862,6 +908,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         string heading,
         int sectionIndex,
         int totalSections,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         var sectionMin = (int)(ContentLengthTargets.BlogSectionMinWords * 0.85);
@@ -870,7 +917,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var sectionResult = await provider.CompleteAsync(
-                _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections),
+                _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections, revisionNotes),
                 cancellationToken);
 
             var section = LlmResponseJsonParser.ParseSection(

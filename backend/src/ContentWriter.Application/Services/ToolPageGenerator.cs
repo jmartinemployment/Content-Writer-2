@@ -16,6 +16,7 @@ public interface IToolPageGenerator
         ProjectGenerationContext context,
         IContentGenerationProvider provider,
         string pillarArticleUrl,
+        string? revisionNotes = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -44,6 +45,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         ProjectGenerationContext context,
         IContentGenerationProvider provider,
         string pillarArticleUrl,
+        string? revisionNotes = null,
         CancellationToken cancellationToken = default)
     {
         var extraction = ToolSectionExtractor.DiagnoseExtraction(articleRow.Body, metadata.SectionOutline);
@@ -63,7 +65,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
 
         var rows = (await Task.WhenAll(slotted.Select(slot => GenerateOneToolAsync(
                 project, metadata, context, provider, pillarArticleUrl,
-                slot.App, slot.Slug, slot.Order, cancellationToken))))
+                slot.App, slot.Slug, slot.Order, revisionNotes, cancellationToken))))
             .ToList();
 
         if (articleRow.Body is not null)
@@ -87,12 +89,13 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         SoftwareApplicationDescriptor app,
         string slug,
         int order,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         var toolUrl = $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}/{slug}";
 
         var document = await GenerateToolBodyWithValidationAsync(
-            provider, context, metadata, app, slug, cancellationToken);
+            provider, context, metadata, app, slug, revisionNotes, cancellationToken);
 
         var toolMetadata = await GenerateToolMetadataAsync(
             provider, context, metadata, app, document, cancellationToken);
@@ -181,10 +184,11 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         ArticleMetadataDraft pillarMetadata,
         SoftwareApplicationDescriptor app,
         string toolSlug,
+        string? revisionNotes,
         CancellationToken cancellationToken)
     {
         var result = await provider.CompleteAsync(
-            _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug),
+            _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
             cancellationToken);
         // #region agent log
         try

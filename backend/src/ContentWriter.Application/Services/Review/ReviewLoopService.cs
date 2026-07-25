@@ -1,3 +1,4 @@
+using ContentWriter.Application.DTOs;
 using ContentWriter.Application.Providers;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
@@ -50,26 +51,28 @@ public sealed class ReviewLoopService : IReviewLoopService
         var requestedTypes = contentTypes is null or { Count: 0 } ? AllReviewableTypes : contentTypes;
         var verdicts = new List<ReviewVerdict>();
 
+        var context = _orchestrator.BuildContext(project);
+
         if (requestedTypes.Contains(GeneratedContentType.TechnicalArticle)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.TechnicalArticle))
         {
             verdicts.Add(await RunSingleRowLoopAsync(
-                project, GeneratedContentType.TechnicalArticle, project.TargetKeyword,
-                () => _orchestrator.GeneratePillarBodyAsync(projectId, cancellationToken), cancellationToken));
+                project, GeneratedContentType.TechnicalArticle, context,
+                notes => _orchestrator.GeneratePillarBodyAsync(projectId, notes, cancellationToken), cancellationToken));
         }
 
         if (requestedTypes.Contains(GeneratedContentType.BlogPost)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.BlogPost))
         {
             verdicts.Add(await RunSingleRowLoopAsync(
-                project, GeneratedContentType.BlogPost, project.TargetKeyword,
-                () => _orchestrator.GenerateBlogAsync(projectId, cancellationToken), cancellationToken));
+                project, GeneratedContentType.BlogPost, context,
+                notes => _orchestrator.GenerateBlogAsync(projectId, notes, cancellationToken), cancellationToken));
         }
 
         if (requestedTypes.Contains(GeneratedContentType.ToolPost)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.ToolPost))
         {
-            verdicts.AddRange(await RunToolPostBatchLoopAsync(project, projectId, toolSlugToTest, cancellationToken));
+            verdicts.AddRange(await RunToolPostBatchLoopAsync(project, projectId, context, toolSlugToTest, cancellationToken));
         }
 
         return verdicts;
@@ -77,8 +80,8 @@ public sealed class ReviewLoopService : IReviewLoopService
 
     /// <summary>For content types with exactly one row (pillar, blog) — regeneration replaces the row, so it's relooked-up by (project, type) each attempt rather than tracked by a stale Id.</summary>
     private async Task<ReviewVerdict> RunSingleRowLoopAsync(
-        Project project, GeneratedContentType contentType, string targetKeyword,
-        Func<Task> regenerate, CancellationToken cancellationToken)
+        Project project, GeneratedContentType contentType, ProjectGenerationContext context,
+        Func<string?, Task> regenerate, CancellationToken cancellationToken)
     {
         ReviewVerdict verdict = null!;
 
@@ -86,7 +89,7 @@ public sealed class ReviewLoopService : IReviewLoopService
         {
             var row = project.GeneratedContents.First(c => c.ContentType == contentType);
 
-            verdict = await ReviewAndRecordAsync(row, targetKeyword, attempt, cancellationToken);
+            verdict = await ReviewAndRecordAsync(row, context, attempt, cancellationToken);
 
             if (verdict.Status == ReviewVerdictStatus.Approved || attempt == MaxAttempts)
             {
@@ -97,7 +100,7 @@ public sealed class ReviewLoopService : IReviewLoopService
                 return verdict;
             }
 
-            await regenerate();
+            await regenerate(verdict.NotesJson);
         }
 
         return verdict;
@@ -105,7 +108,7 @@ public sealed class ReviewLoopService : IReviewLoopService
 
     /// <summary>Tool posts reviewed as a batch (or single tool if toolSlugToTest specified). Any Revise triggers regenerating the entire set, up to MaxAttempts whole-set attempts.</summary>
     private async Task<List<ReviewVerdict>> RunToolPostBatchLoopAsync(
-        Project project, Guid projectId, string? toolSlugToTest, CancellationToken cancellationToken)
+        Project project, Guid projectId, ProjectGenerationContext context, string? toolSlugToTest, CancellationToken cancellationToken)
     {
         List<ReviewVerdict> verdicts = [];
 
@@ -119,7 +122,7 @@ public sealed class ReviewLoopService : IReviewLoopService
             verdicts = [];
             foreach (var row in rows)
             {
-                verdicts.Add(await ReviewAndRecordAsync(row, project.TargetKeyword, attempt, cancellationToken));
+                verdicts.Add(await ReviewAndRecordAsync(row, context, attempt, cancellationToken));
             }
 
             var allApproved = verdicts.Count > 0 && verdicts.All(v => v.Status == ReviewVerdictStatus.Approved);
@@ -133,16 +136,26 @@ public sealed class ReviewLoopService : IReviewLoopService
                 return verdicts;
             }
 
-            await _orchestrator.GenerateToolPagesAsync(projectId, cancellationToken);
+            // Tag each row's notes with its tool slug before joining — tool pages share generic H2
+            // headings (e.g. "Key Capabilities" on every tool page), so an untagged note could
+            // misfire against the wrong tool's regeneration prompt. BuildRevisionNotesBlock
+            // (ContentPromptBuilder) scopes back down to a single "Tool: {slug}" block per call.
+            var combinedNotes = string.Join(
+                "\n",
+                rows.Zip(verdicts, (row, v) => (row, v))
+                    .Where(rv => rv.v.Status == ReviewVerdictStatus.Revise)
+                    .Select(rv => $"Tool: {rv.row.Slug}\n{rv.v.NotesJson}"));
+
+            await _orchestrator.GenerateToolPagesAsync(projectId, combinedNotes, cancellationToken);
         }
 
         return verdicts;
     }
 
     private async Task<ReviewVerdict> ReviewAndRecordAsync(
-        GeneratedContent row, string targetKeyword, int attempt, CancellationToken cancellationToken)
+        GeneratedContent row, ProjectGenerationContext context, int attempt, CancellationToken cancellationToken)
     {
-        var outcome = await _reviewService.ReviewAsync(row, targetKeyword, cancellationToken);
+        var outcome = await _reviewService.ReviewAsync(row, context, cancellationToken);
 
         var verdict = new ReviewVerdict
         {

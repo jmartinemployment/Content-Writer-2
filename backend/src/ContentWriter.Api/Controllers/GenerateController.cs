@@ -24,7 +24,7 @@ public class GenerateController : ControllerBase
 
     [HttpPost("pillar/body")]
     public Task<IActionResult> GeneratePillarBody(Guid projectId, CancellationToken cancellationToken) =>
-        RunStep(projectId, _orchestrator.GeneratePillarBodyAsync(projectId, cancellationToken), "pillar-body", cancellationToken);
+        RunStep(projectId, _orchestrator.GeneratePillarBodyAsync(projectId, cancellationToken: cancellationToken), "pillar-body", cancellationToken);
 
     [HttpPost("pillar")]
     public Task<IActionResult> GeneratePillar(Guid projectId, CancellationToken cancellationToken) =>
@@ -32,11 +32,11 @@ public class GenerateController : ControllerBase
 
     [HttpPost("tools")]
     public Task<IActionResult> GenerateToolPages(Guid projectId, CancellationToken cancellationToken) =>
-        RunStep(projectId, _orchestrator.GenerateToolPagesAsync(projectId, cancellationToken), "tools", cancellationToken);
+        RunStep(projectId, _orchestrator.GenerateToolPagesAsync(projectId, cancellationToken: cancellationToken), "tools", cancellationToken);
 
     [HttpPost("blog")]
     public Task<IActionResult> GenerateBlog(Guid projectId, CancellationToken cancellationToken) =>
-        RunStep(projectId, _orchestrator.GenerateBlogAsync(projectId, cancellationToken), "blog", cancellationToken);
+        RunStep(projectId, _orchestrator.GenerateBlogAsync(projectId, cancellationToken: cancellationToken), "blog", cancellationToken);
 
     [HttpPost("social")]
     public Task<IActionResult> GenerateSocial(Guid projectId, CancellationToken cancellationToken) =>
@@ -47,8 +47,16 @@ public class GenerateController : ControllerBase
         RunStep(projectId, _orchestrator.GenerateColdOutreachAsync(projectId, cancellationToken), "email-cold-outreach", cancellationToken);
 
     [HttpPost("image-prompts")]
-    public Task<IActionResult> GenerateImagePrompts(Guid projectId, CancellationToken cancellationToken) =>
-        RunStep(projectId, _orchestrator.GenerateImagePromptsAsync(projectId, cancellationToken), "image-prompts", cancellationToken);
+    public Task<IActionResult> GenerateImagePrompts(
+        Guid projectId, [FromBody] GenerateImagePromptsRequest? request, CancellationToken cancellationToken)
+    {
+        var headings = request?.SectionHeadingsToTest is { Count: > 0 } h ? new HashSet<string>(h, StringComparer.OrdinalIgnoreCase) : null;
+        return RunStep(
+            projectId,
+            _orchestrator.GenerateImagePromptsAsync(projectId, headings, cancellationToken),
+            "image-prompts",
+            cancellationToken);
+    }
 
     [HttpPost]
     public Task<IActionResult> GenerateAll(Guid projectId, CancellationToken cancellationToken) =>
@@ -80,3 +88,8 @@ public class GenerateController : ControllerBase
         }
     }
 }
+
+/// <summary>When SectionHeadingsToTest is empty/omitted, every section is (re)generated, same as before.
+/// When populated, only the listed section headings (pillar/blog H2 text, or the pillar/blog title for the
+/// hero images, or a tool name) are regenerated — existing image prompts for other sections are left as-is.</summary>
+public sealed record GenerateImagePromptsRequest(List<string>? SectionHeadingsToTest = null);

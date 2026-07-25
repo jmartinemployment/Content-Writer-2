@@ -23,17 +23,20 @@ public interface IContentPromptBuilder
         int sectionIndex,
         int totalSections,
         IReadOnlyList<string> fullOutline,
-        bool isRegeneration);
+        bool isRegeneration,
+        string? revisionNotes = null);
 
     ChatCompletionRequest BuildArticleFaqSectionPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> faqQuestions,
-        bool isRegeneration);
+        bool isRegeneration,
+        string? revisionNotes = null);
 
     ChatCompletionRequest BuildBlogMetadataPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle);
 
-    ChatCompletionRequest BuildBlogBodyPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
+    ChatCompletionRequest BuildBlogBodyPrompt(
+        ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata, string? revisionNotes = null);
 
     ChatCompletionRequest BuildBlogLedePrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
 
@@ -43,7 +46,8 @@ public interface IContentPromptBuilder
         BlogMetadataDraft metadata,
         string sectionHeading,
         int sectionIndex,
-        int totalSections);
+        int totalSections,
+        string? revisionNotes = null);
     ChatCompletionRequest BuildBlogDepthExpansionPrompt(
         ProjectGenerationContext context,
         ArticleDraft sourceArticle,
@@ -64,7 +68,8 @@ public interface IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string toolSlug);
+        string toolSlug,
+        string? revisionNotes = null);
 
     ChatCompletionRequest BuildToolMetadataPrompt(
         ProjectGenerationContext context,
@@ -244,7 +249,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         int sectionIndex,
         int totalSections,
         IReadOnlyList<string> fullOutline,
-        bool isRegeneration)
+        bool isRegeneration,
+        string? revisionNotes = null)
     {
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
         var isTools = PillarSectionClassifier.IsToolsSection(sectionHeading);
@@ -290,6 +296,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
             system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
         }
 
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: sectionHeading);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
         var user = new StringBuilder()
             .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection,
                 $"Write section {sectionIndex + 1} of {totalSections}: \"{sectionHeading}\"."))
@@ -312,7 +324,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> faqQuestions,
-        bool isRegeneration)
+        bool isRegeneration,
+        string? revisionNotes = null)
     {
         var paaBlock = string.Join("\n", faqQuestions.Select((q, i) => $"  - Q{i + 1}: {q}"));
 
@@ -329,6 +342,12 @@ public class ContentPromptBuilder : IContentPromptBuilder
         if (isRegeneration)
         {
             system += Environment.NewLine + "REGENERATION: use fresh phrasing.";
+        }
+
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: "People Also Ask");
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
         }
 
         var user = new StringBuilder()
@@ -409,7 +428,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         BlogMetadataDraft metadata,
         string sectionHeading,
         int sectionIndex,
-        int totalSections)
+        int totalSections,
+        string? revisionNotes = null)
     {
         var outlineContext = string.Join("\n", metadata.SectionOutline.Select((h, i) => $"{i + 1}. {h}"));
         var isLast = sectionIndex == totalSections - 1;
@@ -434,7 +454,16 @@ public class ContentPromptBuilder : IContentPromptBuilder
                       $"Just close out this section's own content. Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
         }
 
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: sectionHeading);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
         var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
+                $"Write section {sectionIndex + 1} of {totalSections}: \"{sectionHeading}\"."))
+            .AppendLine()
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Pillar title (reference only): {sourceArticle.Title}")
             .AppendLine($"Blog title: {metadata.Title}")
@@ -483,7 +512,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 8192);
     }
 
-    public ChatCompletionRequest BuildBlogBodyPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata)
+    public ChatCompletionRequest BuildBlogBodyPrompt(
+        ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata, string? revisionNotes = null)
     {
         var pillarSections = sourceArticle.SectionOutline.Count > 0
             ? string.Join(", ", sourceArticle.SectionOutline)
@@ -499,7 +529,16 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(SectionsArrayJsonContract)
             .ToString();
 
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
         var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
+                "Write the full blog body (all sections)."))
+            .AppendLine()
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Pillar title (link target — do not reuse as blog title): {sourceArticle.Title}")
             .AppendLine($"Pillar summary: {sourceArticle.MetaDescription}")
@@ -644,7 +683,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
         SchemaBuilders.SoftwareApplicationDescriptor app,
-        string toolSlug)
+        string toolSlug,
+        string? revisionNotes = null)
     {
         var system = new StringBuilder()
             .AppendLine("You are a senior technical writer for an IT consulting firm.")
@@ -666,7 +706,15 @@ public class ContentPromptBuilder : IContentPromptBuilder
                 "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
             .ToString();
 
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, toolSlug: toolSlug);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
         var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ToolBody, $"Write the tool overview page for {app.Name}."))
+            .AppendLine()
             .AppendLine($"Target keyword context: {context.TargetKeyword}")
             .AppendLine($"Pillar topic: {pillarMetadata.Title}")
             .AppendLine($"Tool name: {app.Name}")
@@ -798,6 +846,87 @@ public class ContentPromptBuilder : IContentPromptBuilder
             Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
             Temperature: 0.35,
             MaxOutputTokens: 8192);
+    }
+
+    /// <summary>
+    /// Renders the "REVISION REQUIRED" system-prompt addendum from a reviewer's revise notes, or
+    /// null if there's nothing to append. When <paramref name="toolSlug"/> is supplied (tool-batch
+    /// regeneration), scopes the notes down to that tool's "Tool: {slug}" block first — notes
+    /// tagged for a different tool must never leak into this tool's regeneration prompt. When
+    /// <paramref name="sectionHeading"/> is supplied (per-section builders), adds a self-filter
+    /// instruction so a section not referenced by any note is left untouched, but only when the
+    /// (possibly tool-scoped) notes actually contain "[Section:" markers to match against —
+    /// otherwise every generation call would silently discard unstructured feedback.
+    /// </summary>
+    private static string? BuildRevisionNotesBlock(string? revisionNotes, string? sectionHeading = null, string? toolSlug = null)
+    {
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            return null;
+        }
+
+        var scoped = revisionNotes;
+        if (toolSlug is not null)
+        {
+            var toolBlock = ExtractToolNotesBlock(revisionNotes, toolSlug);
+            // "Tool:" tags present but none match this slug -> nothing applies to this tool.
+            // No "Tool:" tags at all (e.g. single-tool regeneration test) -> nothing to scope
+            // down from, so the whole text is in scope.
+            scoped = toolBlock ?? (revisionNotes.Contains("Tool:", StringComparison.Ordinal) ? null! : revisionNotes);
+            if (scoped is null)
+            {
+                return null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(scoped))
+        {
+            return null;
+        }
+
+        var hasSectionTags = scoped.Contains("[Section:", StringComparison.Ordinal);
+        if (!hasSectionTags)
+        {
+            // Format guard: the reviewer didn't produce the structured [Section: "..."] format —
+            // fall back to a generic, unfiltered instruction rather than injecting raw prose as if
+            // it were structured, and apply no section/tool self-filter since there's no tag to
+            // match against.
+            return $"REVISION REQUIRED — address the reviewer's feedback: {scoped.Trim()}";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("REVISION REQUIRED — address each of the following before returning your section. Only rewrite the");
+        sb.AppendLine("section(s) referenced below; leave everything else in your usual writing process unaffected.");
+        sb.AppendLine();
+        sb.AppendLine(scoped.Trim());
+
+        if (sectionHeading is not null)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"If none of the notes above reference this section (\"{sectionHeading}\"), ignore them and write normally.");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Extracts the slice of tagged revision notes (see ReviewLoopService) belonging to one tool, by "Tool: {slug}" marker.</summary>
+    private static string? ExtractToolNotesBlock(string taggedNotes, string toolSlug)
+    {
+        var lines = taggedNotes.Split('\n');
+        var marker = $"Tool: {toolSlug}";
+        var start = Array.FindIndex(lines, l => l.Trim().Equals(marker, StringComparison.OrdinalIgnoreCase));
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var end = start + 1;
+        while (end < lines.Length && !lines[end].TrimStart().StartsWith("Tool: ", StringComparison.OrdinalIgnoreCase))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[(start + 1)..end]).Trim();
     }
 
     private static string TruncateExcerpt(string text, int maxChars)
