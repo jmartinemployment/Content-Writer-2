@@ -34,3 +34,10 @@ Pillar body generation already calls the LLM **once per top-level H2**. The Tool
 
 **Preferred long-term approach:** generate one platform (or one child subtree) per LLM call and assemble them under the Tools H2 — same fine-grained pattern as the rest of the pillar — so a high per-call token budget is no longer required for that step. Do not treat raising `MaxOutputTokens` further as the primary solution if this shape keeps growing.
 
+# Queued work (next session)
+
+See [plans/tomorrow-rewrite-and-tools.md](plans/tomorrow-rewrite-and-tools.md):
+
+1. **Editorial rewrite fidelity** — pass review notes into lede (+ meta when relevant); align reviewer rubric with no-invented-facts rules so rewrite → re-review is not a stuck loop.
+2. **Tools per-platform generation** — implement the preferred approach above (this section).
+
