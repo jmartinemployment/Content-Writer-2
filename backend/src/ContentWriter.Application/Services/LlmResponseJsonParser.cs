@@ -486,12 +486,8 @@ public static class LlmResponseJsonParser
                 $"Model returned empty prompt for {expected.SourceType} section \"{expected.Heading}\" in {label}.");
         }
 
-        var words = item.Prompt.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-        if (words < ImagePromptDefaults.PromptMinWords || words > ImagePromptDefaults.PromptMaxWords)
-        {
-            throw new ContentGenerationException(
-                $"Prompt for \"{expected.Heading}\" must be {ImagePromptDefaults.PromptMinWords}–{ImagePromptDefaults.PromptMaxWords} words (got {words}).");
-        }
+        // Word-count range is advisory only (soft gate) — out-of-range prompts still save so the
+        // user can copy/edit them. Empty prompt and invalid dimensions/model remain hard failures.
 
         if (item.Width < 512 || item.Height < 512 || item.Width > 2048 || item.Height > 2048)
         {
@@ -566,13 +562,8 @@ public static class LlmResponseJsonParser
             throw new ContentGenerationException($"Model returned empty ctaLabel for {label}.");
         }
 
-        var words = draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-        if (words < ContentLengthTargets.EmailColdOutreachMinWords || words > ContentLengthTargets.EmailColdOutreachMaxWords)
-        {
-            throw new ContentGenerationException(
-                $"Cold outreach body must be {ContentLengthTargets.EmailColdOutreachMinWords}–{ContentLengthTargets.EmailColdOutreachMaxWords} words (got {words}).");
-        }
-
+        // Word-count range is advisory only (soft gate, same as blog/tools) — out-of-range
+        // bodies still parse/save so the UI can show an amber badge and the user can decide.
         return draft;
     }
 

@@ -111,6 +111,24 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var (document, ledeType) = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, revisionNotes, cancellationToken);
         var wordCount = ContentDocumentText.CountWords(document);
+
+        if (wordCount < ContentLengthTargets.PillarMinWords)
+        {
+            _logger.LogWarning(
+                "Pillar body for project keyword \"{Keyword}\" is {Count} words (minimum {Minimum}) — no expansion pass, single attempt only; saving anyway.",
+                context.TargetKeyword,
+                wordCount,
+                ContentLengthTargets.PillarMinWords);
+        }
+        else if (wordCount > ContentLengthTargets.PillarTargetMaxWords)
+        {
+            _logger.LogWarning(
+                "Pillar body for project keyword \"{Keyword}\" is {Count} words (target max {Maximum}) — no trim pass, single attempt only; saving anyway.",
+                context.TargetKeyword,
+                wordCount,
+                ContentLengthTargets.PillarTargetMaxWords);
+        }
+
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
 
@@ -350,8 +368,18 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             _promptBuilder.BuildColdOutreachPrompt(context, article, articleUrl),
             cancellationToken);
         var draft = LlmResponseJsonParser.ParseColdOutreach(result.Content, "cold outreach email");
-
         var wordCount = draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+        if (wordCount < ContentLengthTargets.EmailColdOutreachMinWords
+            || wordCount > ContentLengthTargets.EmailColdOutreachMaxWords)
+        {
+            _logger.LogWarning(
+                "Cold outreach body for project {ProjectId} is {Count} words (target {Minimum}-{Maximum}) — saving anyway.",
+                projectId,
+                wordCount,
+                ContentLengthTargets.EmailColdOutreachMinWords,
+                ContentLengthTargets.EmailColdOutreachMaxWords);
+        }
 
         await AddContentAsync(project, provider.ProviderType, new GeneratedContent
         {
@@ -740,6 +768,19 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 cancellationToken);
 
             sections.Add(LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'"));
+
+            var sectionMin = PillarOutlineNormalizer.IsToolsSection(heading)
+                ? (int)(ContentLengthTargets.PillarToolsSectionMinWords * 0.85)
+                : (int)(ContentLengthTargets.PillarSectionMinWords * 0.85);
+            var sectionWords = ContentDocumentText.CountWords(sections[^1]);
+            if (sectionWords < sectionMin)
+            {
+                _logger.LogWarning(
+                    "Pillar section \"{Heading}\" is {Count} words (soft minimum {Minimum}) — no retry, single attempt only.",
+                    heading,
+                    sectionWords,
+                    sectionMin);
+            }
         }
 
         if (faqQuestions.Count > 0)
@@ -809,6 +850,14 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 context.TargetKeyword,
                 wordCount,
                 ContentLengthTargets.BlogMinWords);
+        }
+        else if (wordCount > ContentLengthTargets.BlogTargetMaxWords)
+        {
+            _logger.LogWarning(
+                "Blog draft for project keyword \"{Keyword}\" is {Count} words (target max {Maximum}) — no trim pass, single attempt only; saving anyway.",
+                context.TargetKeyword,
+                wordCount,
+                ContentLengthTargets.BlogTargetMaxWords);
         }
 
         var draft = new BlogDraft(

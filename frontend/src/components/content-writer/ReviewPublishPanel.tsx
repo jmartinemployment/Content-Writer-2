@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   commitHtmlExportToGitHub,
   downloadHtmlExport,
@@ -12,6 +12,7 @@ import type {
   CommitHtmlExportResult,
   GeneratedContentSet,
   ReviewVerdict,
+  ToolPostDraft,
 } from "@/lib/content-writer/types";
 
 export default function ReviewPublishPanel({
@@ -23,13 +24,15 @@ export default function ReviewPublishPanel({
   result: GeneratedContentSet | null;
   onGenerated: (result: GeneratedContentSet) => void;
 }) {
+  const toolPosts = result?.toolPosts ?? [];
   const [verdicts, setVerdicts] = useState<ReviewVerdict[] | null>(null);
   const [rewritingId, setRewritingId] = useState<string | null>(null);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewTypes, setReviewTypes] = useState({ pillar: true, blog: true, tools: true });
-  const [testToolSlug, setTestToolSlug] = useState<string | null>(null);
+  const [selectedToolSlug, setSelectedToolSlug] = useState<string>("");
+  const [selectedRewriteVerdictId, setSelectedRewriteVerdictId] = useState<string>("");
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -41,19 +44,51 @@ export default function ReviewPublishPanel({
 
   const hasPublishableContent = (result?.article?.wordCount ?? 0) > 0 || result?.blog != null;
 
+  useEffect(() => {
+    if (toolPosts.length === 0) {
+      setSelectedToolSlug("");
+      return;
+    }
+    setSelectedToolSlug((prev) =>
+      prev && toolPosts.some((t) => t.slug === prev) ? prev : toolPosts[0].slug,
+    );
+  }, [toolPosts]);
+
+  const rewriteCandidates = useMemo(
+    () => (verdicts ?? []).filter((v) => canRewriteVerdict(v)),
+    [verdicts],
+  );
+
+  useEffect(() => {
+    if (rewriteCandidates.length === 0) {
+      setSelectedRewriteVerdictId("");
+      return;
+    }
+    setSelectedRewriteVerdictId((prev) =>
+      prev && rewriteCandidates.some((v) => v.id === prev) ? prev : rewriteCandidates[0].id,
+    );
+  }, [rewriteCandidates]);
+
   async function handleReview() {
     setReviewError(null);
     setIsReviewing(true);
     try {
+      if (reviewTypes.tools && toolPosts.length === 0) {
+        throw new ApiError("No tool documents exist to review. Generate tools in Step 6 first.", 400);
+      }
+      if (reviewTypes.tools && !selectedToolSlug) {
+        throw new ApiError("Choose which tool document to review.", 400);
+      }
+
       const contentTypes = [
         reviewTypes.pillar && "TechnicalArticle",
         reviewTypes.blog && "BlogPost",
         reviewTypes.tools && "ToolPost",
       ].filter((t): t is string => Boolean(t));
-      const toolSlug = reviewTypes.tools && result?.toolPosts?.[0]?.slug ? result.toolPosts[0].slug : null;
+
+      const toolSlug = reviewTypes.tools ? selectedToolSlug : null;
       const next = await runReview(projectId, contentTypes, toolSlug);
       setVerdicts(next);
-      setTestToolSlug(toolSlug);
     } catch (err) {
       setReviewError(err instanceof ApiError ? err.message : "Review failed.");
     } finally {
@@ -76,6 +111,15 @@ export default function ReviewPublishPanel({
     } finally {
       setRewritingId(null);
     }
+  }
+
+  async function handleRewriteSelected() {
+    const verdict = rewriteCandidates.find((v) => v.id === selectedRewriteVerdictId);
+    if (!verdict) {
+      setRewriteError("Choose a document to rewrite.");
+      return;
+    }
+    await handleRewrite(verdict);
   }
 
   async function handleExport() {
@@ -105,7 +149,11 @@ export default function ReviewPublishPanel({
   }
 
   const approvedCount = verdicts?.filter((v) => v.status === "Approved").length ?? 0;
-  const exhaustedCount = verdicts?.filter((v) => v.status === "Exhausted").length ?? 0;
+  const reviseCount = verdicts?.filter((v) => v.status === "Revise" || v.status === "Exhausted").length ?? 0;
+  const canRunReview =
+    !isReviewing &&
+    (reviewTypes.pillar || reviewTypes.blog || reviewTypes.tools) &&
+    (!reviewTypes.tools || Boolean(selectedToolSlug));
 
   if (!hasPublishableContent) {
     return null;
@@ -116,8 +164,10 @@ export default function ReviewPublishPanel({
       <h2 className="text-lg font-semibold text-foreground">8. Editorial Review</h2>
       <p className="mt-1 text-sm text-muted">
         A different model reviews each selected row (invented-feature/fact check, brand-voice consistency) —
-        single pass, no revise-and-retry. Optional: a never-reviewed row can still be exported; only a row
-        reviewed and NOT Approved is excluded. Reviewing fewer rows at once also avoids provider rate limits.
+        single pass. At most <span className="font-medium text-foreground">one tool document</span> is reviewed
+        per run. When feedback is returned, choose a document and use{" "}
+        <span className="font-medium text-foreground">Rewrite with feedback</span> to pass those suggestions to
+        the writer. Re-run review afterward to confirm.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-4 text-sm text-foreground">
@@ -142,14 +192,32 @@ export default function ReviewPublishPanel({
             type="checkbox"
             checked={reviewTypes.tools}
             onChange={(e) => setReviewTypes((t) => ({ ...t, tools: e.target.checked }))}
+            disabled={toolPosts.length === 0}
           />
-          Tools
+          One tool
         </label>
       </div>
 
+      {reviewTypes.tools && toolPosts.length > 0 && (
+        <label className="mt-3 flex flex-col gap-1 text-sm text-foreground sm:max-w-md">
+          <span className="text-xs font-medium text-muted">Tool document to review</span>
+          <select
+            value={selectedToolSlug}
+            onChange={(e) => setSelectedToolSlug(e.target.value)}
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+          >
+            {toolPosts.map((tool) => (
+              <option key={tool.slug} value={tool.slug}>
+                {toolLabel(tool)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <button
         onClick={handleReview}
-        disabled={isReviewing || !(reviewTypes.pillar || reviewTypes.blog || reviewTypes.tools)}
+        disabled={!canRunReview}
         className="mt-4 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-60"
       >
         {isReviewing ? "Reviewing..." : verdicts ? "Re-run review" : "Run review"}
@@ -158,10 +226,46 @@ export default function ReviewPublishPanel({
       {reviewError && <p className="mt-4 text-sm text-red-600">{reviewError}</p>}
 
       {verdicts && (
-        <div className="mt-5 space-y-2">
+        <div className="mt-5 space-y-3">
           <p className="text-xs text-muted">
-            {approvedCount} approved, {exhaustedCount} exhausted, {verdicts.length} rows reviewed.
+            {approvedCount} approved, {reviseCount} need rewrite, {verdicts.length} rows reviewed.
           </p>
+
+          {rewriteCandidates.length > 0 && (
+            <div className="rounded-lg border border-border bg-background p-3">
+              <p className="text-sm font-semibold text-foreground">Rewrite a particular document</p>
+              <p className="mt-1 text-xs text-muted">
+                Pass that document&apos;s review suggestions to the writer and regenerate only that row.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-foreground">
+                  <span className="text-xs font-medium text-muted">Document</span>
+                  <select
+                    value={selectedRewriteVerdictId}
+                    onChange={(e) => setSelectedRewriteVerdictId(e.target.value)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    {rewriteCandidates.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {rewriteOptionLabel(v)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleRewriteSelected}
+                  disabled={rewritingId !== null || !selectedRewriteVerdictId}
+                  className="rounded-md border border-brand px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
+                >
+                  {rewritingId === selectedRewriteVerdictId
+                    ? "Rewriting with feedback..."
+                    : "Rewrite with feedback"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {verdicts.map((v) => (
             <VerdictRow
               key={v.id}
@@ -233,6 +337,44 @@ export default function ReviewPublishPanel({
   );
 }
 
+function toolLabel(tool: ToolPostDraft): string {
+  return `${tool.title} (${tool.slug})`;
+}
+
+function extractNotes(notesJson: string): string {
+  try {
+    const parsed = JSON.parse(notesJson) as { notes?: string };
+    return parsed.notes ?? "";
+  } catch {
+    return notesJson;
+  }
+}
+
+function canRewriteVerdict(verdict: ReviewVerdict): boolean {
+  return (
+    (verdict.status === "Revise" || verdict.status === "Exhausted") &&
+    extractNotes(verdict.notesJson).trim().length > 0
+  );
+}
+
+function contentTypeLabel(contentType: ReviewVerdict["contentType"]): string {
+  switch (contentType) {
+    case "TechnicalArticle":
+      return "Pillar";
+    case "BlogPost":
+      return "Blog";
+    case "ToolPost":
+      return "Tool";
+    default:
+      return contentType;
+  }
+}
+
+function rewriteOptionLabel(verdict: ReviewVerdict): string {
+  const type = contentTypeLabel(verdict.contentType);
+  return verdict.title ? `${type} · ${verdict.title}` : type;
+}
+
 function VerdictRow({
   verdict,
   onRewrite,
@@ -249,17 +391,16 @@ function VerdictRow({
         ? "bg-red-100 text-red-800"
         : "bg-amber-100 text-amber-800";
 
-  let notes = "";
-  try {
-    const parsed = JSON.parse(verdict.notesJson) as { notes?: string };
-    notes = parsed.notes ?? "";
-  } catch {
-    notes = verdict.notesJson;
-  }
+  const notes = extractNotes(verdict.notesJson);
+  const canRewrite = canRewriteVerdict(verdict);
 
   return (
     <div className="rounded-lg border border-border bg-background p-3 text-xs">
       <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-foreground">
+          {contentTypeLabel(verdict.contentType)}
+          {verdict.title ? ` · ${verdict.title}` : ""}
+        </span>
         <span className={`rounded-full px-2 py-0.5 font-medium ${badgeClass}`}>{verdict.status}</span>
         <span className="text-muted">
           attempt {verdict.attemptCount} · reviewed by {verdict.reviewerProvider} ({verdict.reviewerModel})
@@ -271,15 +412,20 @@ function VerdictRow({
         )}
       </div>
       {verdict.retryReason && <p className="mt-2 text-amber-700">{verdict.retryReason}</p>}
-      {notes && <p className="mt-2 text-foreground">{notes}</p>}
-      {verdict.status === "Revise" && (
+      {notes && (
+        <div className="mt-2 rounded-md border border-border bg-surface p-2 text-foreground">
+          <p className="mb-1 font-medium text-muted">Suggestions for writer</p>
+          <p className="whitespace-pre-wrap">{notes}</p>
+        </div>
+      )}
+      {canRewrite && (
         <button
           type="button"
           onClick={() => onRewrite(verdict)}
           disabled={isRewriting}
           className="mt-2 rounded-md border border-brand px-2 py-1 text-xs font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
         >
-          {isRewriting ? "Rewriting..." : "Rewrite with feedback"}
+          {isRewriting ? "Rewriting with feedback..." : "Rewrite with feedback"}
         </button>
       )}
     </div>

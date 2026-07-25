@@ -14,8 +14,6 @@ namespace ContentWriter.Api.Controllers;
 [Route("api/projects/{projectId:guid}/crawl")]
 public class CrawlController : ControllerBase
 {
-    private const int MaxFocusAttempts = 2;
-
     private readonly IProjectStore _projectStore;
     private readonly ISiteCrawlerService _crawlerService;
     private readonly IContentProviderFactory _providerFactory;
@@ -94,33 +92,29 @@ public class CrawlController : ControllerBase
         var provider = _providerFactory.Get(project.PreferredProvider);
         var prompt = _promptBuilder.BuildTopicFocusPrompt(result.SiteName, result.Headings, result.Paragraphs);
 
-        for (var attempt = 1; attempt <= MaxFocusAttempts; attempt++)
+        try
         {
-            try
-            {
-                var completion = await provider.CompleteAsync(prompt, cancellationToken);
-                var parsed = LlmResponseJsonParser.Parse<TopicFocusResponse>(completion.Content, "topic focus");
-                var phrases = (parsed.Focus ?? [])
-                    .Select(p => p?.Trim())
-                    .Where(p => !string.IsNullOrWhiteSpace(p))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Take(8)
-                    .ToList();
+            var completion = await provider.CompleteAsync(prompt, cancellationToken);
+            var parsed = LlmResponseJsonParser.Parse<TopicFocusResponse>(completion.Content, "topic focus");
+            var phrases = (parsed.Focus ?? [])
+                .Select(p => p?.Trim())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(8)
+                .ToList();
 
-                if (phrases.Count > 0)
-                {
-                    return string.Join(", ", phrases);
-                }
-
-                _logger.LogWarning("LLM returned empty topic focus for project {ProjectId} (attempt {Attempt})", project.Id, attempt);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            if (phrases.Count > 0)
             {
-                _logger.LogWarning(ex, "Topic focus extraction failed for project {ProjectId} (attempt {Attempt})", project.Id, attempt);
+                return string.Join(", ", phrases);
             }
+
+            _logger.LogWarning("LLM returned empty topic focus for project {ProjectId} — falling back to heuristic.", project.Id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Topic focus extraction failed for project {ProjectId} — falling back to heuristic.", project.Id);
         }
 
-        _logger.LogWarning("Falling back to heuristic DetectFocus for project {ProjectId} after {Attempts} failed attempts", project.Id, MaxFocusAttempts);
         return null;
     }
 }

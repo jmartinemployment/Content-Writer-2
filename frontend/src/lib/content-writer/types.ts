@@ -143,6 +143,24 @@ export const CONTENT_LENGTH_TARGETS = {
     definition:
       "Comprehensive single-platform guides — deep implementation context, capabilities, and when to use it.",
   },
+  imagePrompt: {
+    min: 20,
+    max: 400,
+    label: "20–400",
+  },
+  socialFacebook: {
+    minWords: 30,
+    maxWords: 50,
+    maxChars: 250,
+    label: "~40 words, under 250 chars",
+  },
+  socialLinkedIn: {
+    minWords: 200,
+    maxWords: 300,
+    minChars: 1300,
+    maxChars: 1900,
+    label: "200–300 words, 1,300–1,900 chars",
+  },
 } as const;
 
 export interface ColdOutreachEmailDraft {
@@ -219,6 +237,8 @@ export interface ReviewVerdict {
   id: string;
   generatedContentId: string;
   contentType: GeneratedContentType;
+  title: string;
+  slug: string;
   status: ReviewVerdictStatus;
   attemptCount: number;
   reviewerProvider: LlmProviderType;

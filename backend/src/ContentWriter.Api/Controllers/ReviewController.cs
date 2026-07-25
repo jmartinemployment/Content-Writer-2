@@ -30,8 +30,19 @@ public class ReviewController : ControllerBase
 
             var verdicts = await _reviewLoop.RunForProjectAsync(projectId, contentTypes, request?.ToolSlugToTest, cancellationToken);
             return Ok(verdicts.Select(v => new ReviewVerdictResponse(
-                v.Id, v.GeneratedContentId, v.GeneratedContent!.ContentType, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
-                v.NotesJson, v.RetryCount, v.RetryReason, v.CreatedAtUtc)).ToList());
+                v.Id,
+                v.GeneratedContentId,
+                v.GeneratedContent!.ContentType,
+                v.GeneratedContent.Title,
+                v.GeneratedContent.Slug,
+                v.Status,
+                v.AttemptCount,
+                v.ReviewerProvider,
+                v.ReviewerModel,
+                v.NotesJson,
+                v.RetryCount,
+                v.RetryReason,
+                v.CreatedAtUtc)).ToList());
         }
         catch (ContentGenerationException ex)
         {
@@ -62,6 +73,16 @@ public sealed record RunReviewRequest(List<GeneratedContentType>? ContentTypes, 
 public sealed record RewriteRequest(Guid GeneratedContentId);
 
 public sealed record ReviewVerdictResponse(
-    Guid Id, Guid GeneratedContentId, GeneratedContentType ContentType, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,
-    Domain.Enums.LlmProviderType ReviewerProvider, string ReviewerModel, string NotesJson,
-    int RetryCount, string? RetryReason, DateTime CreatedAtUtc);
+    Guid Id,
+    Guid GeneratedContentId,
+    GeneratedContentType ContentType,
+    string Title,
+    string Slug,
+    Domain.Enums.ReviewVerdictStatus Status,
+    int AttemptCount,
+    Domain.Enums.LlmProviderType ReviewerProvider,
+    string ReviewerModel,
+    string NotesJson,
+    int RetryCount,
+    string? RetryReason,
+    DateTime CreatedAtUtc);

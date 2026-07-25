@@ -61,7 +61,7 @@ public class LlmResponseJsonParserImagePromptsTests
     }
 
     [Fact]
-    public void ParseSectionImagePrompts_PromptTooShort_Throws()
+    public void ParseSectionImagePrompts_PromptTooShort_StillParses()
     {
         var raw = $$"""
             {
@@ -94,8 +94,10 @@ public class LlmResponseJsonParserImagePromptsTests
             }
             """;
 
-        Assert.Throws<ContentGenerationException>(() =>
-            LlmResponseJsonParser.ParseSectionImagePrompts(raw, ExpectedSections, "image prompts"));
+        var draft = LlmResponseJsonParser.ParseSectionImagePrompts(raw, ExpectedSections, "image prompts");
+
+        Assert.Equal(2, draft.Sections.Count);
+        Assert.Equal(10, draft.Sections[0].Prompt.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
     }
 
     [Fact]

@@ -62,6 +62,7 @@ public enum ReviewVerdictStatus
     Approved = 0,
     Revise = 1,
 
-    /// <summary>Hit the attempt cap without reaching Approved — needs an operator, not another auto-retry.</summary>
+    /// <summary>Legacy status from the removed auto-retry attempt cap. New reviews leave Revise as Revise;
+    /// rewrite still accepts Exhausted so older verdicts remain actionable.</summary>
     Exhausted = 2
 }

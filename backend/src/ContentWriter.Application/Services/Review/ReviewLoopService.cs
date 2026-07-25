@@ -9,18 +9,19 @@ namespace ContentWriter.Application.Services.Review;
 public interface IReviewLoopService
 {
     /// <summary>
-    /// Runs the automated revise loop over a project's publishable rows (pillar, blog, the tool
-    /// post set) — review, and on Revise regenerate + re-review, up to <see cref="MaxAttempts"/>
-    /// attempts. No human gate, no held-for-manual-review state. A row that hits the cap without
-    /// Approved becomes Exhausted — visible via the live AttemptCount, not silently retried forever.
+    /// Single-pass review over a project's publishable rows (pillar, blog, and at most one tool
+    /// post). Does not regenerate or re-review automatically — when the verdict is Revise, the
+    /// user triggers rewrite via <see cref="RewriteFromLatestVerdictAsync"/>.
+    /// When tools are included, <paramref name="toolSlugToTest"/> selects which tool; if omitted,
+    /// the first tool by order is reviewed.
     /// </summary>
     Task<List<ReviewVerdict>> RunForProjectAsync(
         Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, string? toolSlugToTest = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Manually regenerates one row using its own most recent "Revise" verdict's notes — the
-    /// user-triggered counterpart to the automatic (currently dead at MaxAttempts=1) retry above.
-    /// For a ToolPost row this regenerates only that one tool, not the whole tool-post batch.
+    /// User-initiated regenerate for one row using its most recent revise feedback (Revise or
+    /// legacy Exhausted). Passes extracted reviewer suggestions into the writer prompt. For a
+    /// ToolPost row this regenerates only that one tool, not the whole tool-post batch.
     /// </summary>
     Task<GeneratedContentSet> RewriteFromLatestVerdictAsync(
         Guid projectId, Guid generatedContentId, CancellationToken cancellationToken = default);
@@ -28,9 +29,6 @@ public interface IReviewLoopService
 
 public sealed class ReviewLoopService : IReviewLoopService
 {
-    // Capped to 1 to limit review-call cost — no revise-and-retry loop, just a single review pass per row.
-    private const int MaxAttempts = 1;
-
     private readonly IProjectStore _projectStore;
     private readonly IEditorialReviewService _reviewService;
     private readonly IContentGenerationOrchestrator _orchestrator;
@@ -64,23 +62,37 @@ public sealed class ReviewLoopService : IReviewLoopService
         if (requestedTypes.Contains(GeneratedContentType.TechnicalArticle)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.TechnicalArticle))
         {
-            verdicts.Add(await RunSingleRowLoopAsync(
-                project, GeneratedContentType.TechnicalArticle, context,
-                notes => _orchestrator.GeneratePillarBodyAsync(projectId, notes, cancellationToken), cancellationToken));
+            verdicts.Add(await ReviewSingleRowAsync(project, GeneratedContentType.TechnicalArticle, context, cancellationToken));
         }
 
         if (requestedTypes.Contains(GeneratedContentType.BlogPost)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.BlogPost))
         {
-            verdicts.Add(await RunSingleRowLoopAsync(
-                project, GeneratedContentType.BlogPost, context,
-                notes => _orchestrator.GenerateBlogAsync(projectId, notes, cancellationToken), cancellationToken));
+            verdicts.Add(await ReviewSingleRowAsync(project, GeneratedContentType.BlogPost, context, cancellationToken));
         }
 
         if (requestedTypes.Contains(GeneratedContentType.ToolPost)
             && project.GeneratedContents.Any(c => c.ContentType == GeneratedContentType.ToolPost))
         {
-            verdicts.AddRange(await RunToolPostBatchLoopAsync(project, projectId, context, toolSlugToTest, cancellationToken));
+            // Always review exactly one tool page — never the whole batch (rate limits + focused rewrite).
+            var toolRow = project.GeneratedContents
+                .Where(c => c.ContentType == GeneratedContentType.ToolPost)
+                .OrderBy(c => c.SourceAppOrder)
+                .ThenBy(c => c.Title)
+                .FirstOrDefault(c =>
+                    string.IsNullOrWhiteSpace(toolSlugToTest)
+                    || string.Equals(c.Slug, toolSlugToTest, StringComparison.OrdinalIgnoreCase));
+
+            if (toolRow is null && !string.IsNullOrWhiteSpace(toolSlugToTest))
+            {
+                throw new ContentGenerationException(
+                    $"No tool post with slug '{toolSlugToTest}' was found to review.");
+            }
+
+            if (toolRow is not null)
+            {
+                verdicts.Add(await ReviewAndRecordAsync(toolRow, context, cancellationToken));
+            }
         }
 
         return verdicts;
@@ -95,101 +107,85 @@ public sealed class ReviewLoopService : IReviewLoopService
         var row = project.GeneratedContents.FirstOrDefault(c => c.Id == generatedContentId)
             ?? throw new ContentGenerationException($"Generated content {generatedContentId} was not found.");
 
-        var latestRevise = row.ReviewVerdicts
-            .Where(v => v.Status == ReviewVerdictStatus.Revise)
+        // Legacy Exhausted verdicts (from the old auto-retry attempt cap) still carry rewrite feedback.
+        var latestFeedback = row.ReviewVerdicts
+            .Where(v => v.Status is ReviewVerdictStatus.Revise or ReviewVerdictStatus.Exhausted)
             .OrderByDescending(v => v.CreatedAtUtc)
             .FirstOrDefault()
-            ?? throw new ContentGenerationException("No outstanding revise verdict for this content.");
+            ?? throw new ContentGenerationException("No outstanding revise feedback for this content.");
+
+        var revisionNotes = ExtractRevisionNotes(latestFeedback.NotesJson);
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            throw new ContentGenerationException("Latest review verdict has no suggestions to pass to the writer.");
+        }
+
+        // Tool regenerations share generic H2 names — tag notes with this row's slug so
+        // BuildRevisionNotesBlock can scope them when Tool: markers are present.
+        if (row.ContentType == GeneratedContentType.ToolPost
+            && !revisionNotes.Contains("Tool:", StringComparison.Ordinal))
+        {
+            revisionNotes = $"Tool: {row.Slug}\n{revisionNotes}";
+        }
 
         return row.ContentType switch
         {
             GeneratedContentType.TechnicalArticle =>
-                await _orchestrator.GeneratePillarBodyAsync(projectId, latestRevise.NotesJson, cancellationToken: cancellationToken),
+                await _orchestrator.GeneratePillarBodyAsync(projectId, revisionNotes, cancellationToken: cancellationToken),
             GeneratedContentType.BlogPost =>
-                await _orchestrator.GenerateBlogAsync(projectId, latestRevise.NotesJson, cancellationToken),
+                await _orchestrator.GenerateBlogAsync(projectId, revisionNotes, cancellationToken),
             GeneratedContentType.ToolPost =>
                 await _orchestrator.GenerateToolPagesAsync(
-                    projectId, latestRevise.NotesJson, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { row.Slug }, cancellationToken),
+                    projectId, revisionNotes, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { row.Slug }, cancellationToken),
             _ => throw new ContentGenerationException("Rewrite is not supported for this content type."),
         };
     }
 
-    /// <summary>For content types with exactly one row (pillar, blog) — regeneration replaces the row, so it's relooked-up by (project, type) each attempt rather than tracked by a stale Id.</summary>
-    private async Task<ReviewVerdict> RunSingleRowLoopAsync(
-        Project project, GeneratedContentType contentType, ProjectGenerationContext context,
-        Func<string?, Task> regenerate, CancellationToken cancellationToken)
+    /// <summary>Pulls the human-readable suggestions out of a reviewer response. Accepts either the
+    /// raw JSON <c>{"verdict","notes"}</c> blob stored on the verdict, or plain notes text.</summary>
+    public static string ExtractRevisionNotes(string notesJson)
     {
-        ReviewVerdict verdict = null!;
-
-        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        if (string.IsNullOrWhiteSpace(notesJson))
         {
-            var row = project.GeneratedContents.First(c => c.ContentType == contentType);
-
-            verdict = await ReviewAndRecordAsync(row, context, attempt, cancellationToken);
-
-            if (verdict.Status == ReviewVerdictStatus.Approved || attempt == MaxAttempts)
-            {
-                if (verdict.Status == ReviewVerdictStatus.Revise && attempt == MaxAttempts)
-                {
-                    verdict.Status = ReviewVerdictStatus.Exhausted;
-                }
-                return verdict;
-            }
-
-            await regenerate(verdict.NotesJson);
+            return string.Empty;
         }
 
-        return verdict;
+        var trimmed = notesJson.Trim();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (doc.RootElement.TryGetProperty("notes", out var notesProp)
+                    && notesProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    return notesProp.GetString()?.Trim() ?? string.Empty;
+                }
+
+                // Reviewer JSON without a notes field (e.g. approved-only) — nothing to pass.
+                if (doc.RootElement.TryGetProperty("verdict", out _))
+                {
+                    return string.Empty;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Not JSON — treat the whole string as the feedback.
+        }
+
+        return trimmed;
     }
 
-    /// <summary>Tool posts reviewed as a batch (or single tool if toolSlugToTest specified). Any Revise triggers regenerating the entire set, up to MaxAttempts whole-set attempts.</summary>
-    private async Task<List<ReviewVerdict>> RunToolPostBatchLoopAsync(
-        Project project, Guid projectId, ProjectGenerationContext context, string? toolSlugToTest, CancellationToken cancellationToken)
+    private async Task<ReviewVerdict> ReviewSingleRowAsync(
+        Project project, GeneratedContentType contentType, ProjectGenerationContext context, CancellationToken cancellationToken)
     {
-        List<ReviewVerdict> verdicts = [];
-
-        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
-        {
-            var rows = project.GeneratedContents
-                .Where(c => c.ContentType == GeneratedContentType.ToolPost)
-                .Where(c => string.IsNullOrWhiteSpace(toolSlugToTest) || c.Slug == toolSlugToTest)
-                .ToList();
-
-            verdicts = [];
-            foreach (var row in rows)
-            {
-                verdicts.Add(await ReviewAndRecordAsync(row, context, attempt, cancellationToken));
-            }
-
-            var allApproved = verdicts.Count > 0 && verdicts.All(v => v.Status == ReviewVerdictStatus.Approved);
-            if (allApproved || attempt == MaxAttempts)
-            {
-                if (!allApproved)
-                {
-                    foreach (var v in verdicts.Where(v => v.Status == ReviewVerdictStatus.Revise))
-                        v.Status = ReviewVerdictStatus.Exhausted;
-                }
-                return verdicts;
-            }
-
-            // Tag each row's notes with its tool slug before joining — tool pages share generic H2
-            // headings (e.g. "Key Capabilities" on every tool page), so an untagged note could
-            // misfire against the wrong tool's regeneration prompt. BuildRevisionNotesBlock
-            // (ContentPromptBuilder) scopes back down to a single "Tool: {slug}" block per call.
-            var combinedNotes = string.Join(
-                "\n",
-                rows.Zip(verdicts, (row, v) => (row, v))
-                    .Where(rv => rv.v.Status == ReviewVerdictStatus.Revise)
-                    .Select(rv => $"Tool: {rv.row.Slug}\n{rv.v.NotesJson}"));
-
-            await _orchestrator.GenerateToolPagesAsync(projectId, combinedNotes, cancellationToken: cancellationToken);
-        }
-
-        return verdicts;
+        var row = project.GeneratedContents.First(c => c.ContentType == contentType);
+        return await ReviewAndRecordAsync(row, context, cancellationToken);
     }
 
     private async Task<ReviewVerdict> ReviewAndRecordAsync(
-        GeneratedContent row, ProjectGenerationContext context, int attempt, CancellationToken cancellationToken)
+        GeneratedContent row, ProjectGenerationContext context, CancellationToken cancellationToken)
     {
         var outcome = await _reviewService.ReviewAsync(row, context, cancellationToken);
 
@@ -201,7 +197,7 @@ public sealed class ReviewLoopService : IReviewLoopService
             NotesJson = outcome.NotesJson,
             ReviewerProvider = outcome.ReviewerProvider,
             ReviewerModel = outcome.ReviewerModel,
-            AttemptCount = attempt,
+            AttemptCount = 1,
             RetryCount = outcome.RetryCount,
             RetryReason = outcome.RetryReason,
         };

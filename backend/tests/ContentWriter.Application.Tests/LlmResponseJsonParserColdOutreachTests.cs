@@ -36,23 +36,27 @@ public class LlmResponseJsonParserColdOutreachTests
     }
 
     [Fact]
-    public void ParseColdOutreach_BodyTooFewWords_Throws()
+    public void ParseColdOutreach_BodyTooFewWords_StillReturnsDraft()
     {
         var body = string.Join(" ", Enumerable.Repeat("word", 49));
         var raw = $$"""{"subject":"Test subject","bodyText":"{{body}}","ctaLabel":"Read more"}""";
 
-        Assert.Throws<ContentGenerationException>(() =>
-            LlmResponseJsonParser.ParseColdOutreach(raw, "cold outreach"));
+        var draft = LlmResponseJsonParser.ParseColdOutreach(raw, "cold outreach");
+
+        Assert.Equal("Test subject", draft.Subject);
+        Assert.Equal(49, draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
     }
 
     [Fact]
-    public void ParseColdOutreach_BodyTooManyWords_Throws()
+    public void ParseColdOutreach_BodyTooManyWords_StillReturnsDraft()
     {
         var body = string.Join(" ", Enumerable.Repeat("word", 126));
         var raw = $$"""{"subject":"Test subject","bodyText":"{{body}}","ctaLabel":"Read more"}""";
 
-        Assert.Throws<ContentGenerationException>(() =>
-            LlmResponseJsonParser.ParseColdOutreach(raw, "cold outreach"));
+        var draft = LlmResponseJsonParser.ParseColdOutreach(raw, "cold outreach");
+
+        Assert.Equal("Test subject", draft.Subject);
+        Assert.Equal(126, draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
     }
 
     [Fact]

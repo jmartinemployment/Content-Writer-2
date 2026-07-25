@@ -278,6 +278,7 @@ export default function ContentResults({
                 planOnly={!hasPillarBody}
                 targetLabel={`Target: ${CONTENT_LENGTH_TARGETS.pillar.label} words`}
                 minWords={CONTENT_LENGTH_TARGETS.pillar.min}
+                maxWords={CONTENT_LENGTH_TARGETS.pillar.max}
               />
             )}
             {activeTab === "blog" &&
@@ -293,6 +294,7 @@ export default function ContentResults({
                   sectionOutline={result.blog.sectionOutline}
                   targetLabel={`Target: ${CONTENT_LENGTH_TARGETS.blog.label} words`}
                   minWords={CONTENT_LENGTH_TARGETS.blog.min}
+                  maxWords={CONTENT_LENGTH_TARGETS.blog.max}
                 />
               ) : (
                 <EmptyTabHint message="Run Step 3 to generate the blog post." />
@@ -403,6 +405,7 @@ function ArticleView({
   planOnly = false,
   targetLabel,
   minWords,
+  maxWords,
 }: {
   title: string;
   metaDescription: string;
@@ -415,9 +418,12 @@ function ArticleView({
   planOnly?: boolean;
   targetLabel?: string;
   minWords?: number;
+  maxWords?: number;
 }) {
   const [showSchema, setShowSchema] = useState(false);
   const underTarget = minWords != null && wordCount > 0 && wordCount < minWords;
+  const overTarget = maxWords != null && wordCount > maxWords;
+  const outOfRange = underTarget || overTarget;
 
   return (
     <div>
@@ -427,7 +433,7 @@ function ArticleView({
           {wordCount > 0 && (
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                underTarget ? "bg-amber-100 text-amber-800" : "bg-brand/10 text-brand"
+                outOfRange ? "bg-amber-100 text-amber-800" : "bg-brand/10 text-brand"
               }`}
             >
               {wordCount} words
@@ -499,15 +505,38 @@ function countWords(text: string): number {
 function SocialView({ text, platform }: { text: string; platform: "Facebook" | "LinkedIn" }) {
   const words = countWords(text);
   const chars = text.length;
-  const target =
-    platform === "Facebook" ? "~40 words, under 250 chars" : "200–300 words, 1,300–1,900 chars";
+  const outOfRange =
+    platform === "Facebook"
+      ? words < CONTENT_LENGTH_TARGETS.socialFacebook.minWords ||
+        words > CONTENT_LENGTH_TARGETS.socialFacebook.maxWords ||
+        chars > CONTENT_LENGTH_TARGETS.socialFacebook.maxChars
+      : words < CONTENT_LENGTH_TARGETS.socialLinkedIn.minWords ||
+        words > CONTENT_LENGTH_TARGETS.socialLinkedIn.maxWords ||
+        chars < CONTENT_LENGTH_TARGETS.socialLinkedIn.minChars ||
+        chars > CONTENT_LENGTH_TARGETS.socialLinkedIn.maxChars;
+  const targetLabel =
+    platform === "Facebook"
+      ? CONTENT_LENGTH_TARGETS.socialFacebook.label
+      : CONTENT_LENGTH_TARGETS.socialLinkedIn.label;
 
   return (
     <div>
       <div className="mb-2 flex flex-wrap gap-2 text-xs text-muted">
-        <span className="rounded-full bg-brand/10 px-2 py-0.5 font-medium text-brand">{words} words</span>
-        <span className="rounded-full bg-brand/10 px-2 py-0.5 font-medium text-brand">{chars} characters</span>
-        <span>Target: {target}</span>
+        <span
+          className={`rounded-full px-2 py-0.5 font-medium ${
+            outOfRange ? "bg-amber-100 text-amber-800" : "bg-brand/10 text-brand"
+          }`}
+        >
+          {words} words
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 font-medium ${
+            outOfRange ? "bg-amber-100 text-amber-800" : "bg-brand/10 text-brand"
+          }`}
+        >
+          {chars} characters
+        </span>
+        <span>Target: {targetLabel}</span>
       </div>
       <div className="whitespace-pre-wrap rounded-lg border border-border bg-background p-4 text-sm text-foreground">
         {text}
@@ -677,6 +706,10 @@ function ImagePromptSectionGroup({
 
 function ImagePromptCard({ item }: { item: ImagePromptSection }) {
   const [copied, setCopied] = useState<"prompt" | "all" | null>(null);
+  const words = countWords(item.prompt);
+  const outOfRange =
+    words < CONTENT_LENGTH_TARGETS.imagePrompt.min ||
+    words > CONTENT_LENGTH_TARGETS.imagePrompt.max;
 
   async function handleCopy(mode: "prompt" | "all") {
     await copyText(mode === "prompt" ? item.prompt : formatImageCopyBlock(item));
@@ -687,9 +720,19 @@ function ImagePromptCard({ item }: { item: ImagePromptSection }) {
   return (
     <div className="rounded-lg border border-border bg-background p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-foreground">
-          {item.order}. {item.heading}
-        </h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-semibold text-foreground">
+            {item.order}. {item.heading}
+          </h3>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              outOfRange ? "bg-amber-100 text-amber-800" : "bg-brand/10 text-brand"
+            }`}
+          >
+            {words} words
+          </span>
+          <span className="text-xs text-muted">Target: {CONTENT_LENGTH_TARGETS.imagePrompt.label}</span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
