@@ -290,7 +290,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: isRegeneration ? 0.72 : 0.65,
-            MaxOutputTokens: isTools ? 4096 : 2048));
+            // Tools sections nest 4–6 platform h3s (each with list + h4 implementer child) as one
+            // JSON object — 4096 truncates mid-JSON under that load; match tool-page body budget.
+            MaxOutputTokens: isTools ? 8192 : 2048));
     }
 
     public ChatCompletionRequest BuildArticleFaqSectionPrompt(
@@ -829,7 +831,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return new StringBuilder()
             .AppendLine("TOOLS SECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
-            .AppendLine("Cover 4-6 major platforms or tools relevant to the target keyword — only real, verifiable, well-known products. Never invent a tool name, vendor, feature, or capability; if unsure a feature exists, describe it generically instead of naming it.")
+            .AppendLine("Cover 4-5 major platforms or tools relevant to the target keyword — only real, verifiable, well-known products. Never invent a tool name, vendor, feature, or capability; if unsure a feature exists, describe it generically instead of naming it.")
+            .AppendLine("Keep each platform's prose tight so the full section JSON can finish without truncation — prefer depth on 4 platforms over shallow coverage of 6.")
             .AppendLine("For EACH platform, add a child Section (tag h3, heading = platform name) under this Tools section:")
             .AppendLine("  - Its own paragraphs: a brief overview of what the platform does for this use case, then a list paragraph with 2-4 factual capability bullets.")
             .AppendLine("  - One further child Section (tag h4, heading \"How an AI implementer helps with {Platform}\") nested under it.")

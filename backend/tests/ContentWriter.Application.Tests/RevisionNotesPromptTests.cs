@@ -34,6 +34,20 @@ public class RevisionNotesPromptTests
         request.Messages.First(m => m.Role == ChatRole.System).Content;
 
     [Fact]
+    public void BuildArticleSectionPrompt_tools_section_uses_8192_output_token_budget()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Top AI Tools for Tax"]);
+
+        var request = builder.BuildArticleSectionPrompt(
+            MakeContext(), metadata, "Top AI Tools for Tax", 0, 1, ["Top AI Tools for Tax"],
+            isRegeneration: false, revisionNotes: null);
+
+        Assert.Equal(8192, request.MaxOutputTokens);
+        Assert.Contains("4-5 major platforms", SystemPrompt(request));
+    }
+
+    [Fact]
     public void BuildArticleSectionPrompt_with_no_revision_notes_omits_revision_block()
     {
         var builder = new ContentPromptBuilder();
