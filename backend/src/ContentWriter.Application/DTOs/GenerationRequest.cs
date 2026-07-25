@@ -150,7 +150,8 @@ public record ToolPostContent(
     ContentDocument Body,
     string MetaDescription,
     string? JsonLdSchema,
-    int? SourceAppOrder)
+    int? SourceAppOrder,
+    int WordCount)
 {
     public string BodyHtml => SectionHtmlRenderer.RenderFragment(Body);
 }

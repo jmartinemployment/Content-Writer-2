@@ -77,6 +77,21 @@ public class RevisionNotesPromptTests
         Assert.DoesNotContain("If none of the notes above reference this section", system);
     }
 
+    [Fact]
+    public void BuildToolBodyPrompt_includes_per_section_word_budgets()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Pillar", "Meta", [], []);
+
+        var system = SystemPrompt(builder.BuildToolBodyPrompt(MakeContext(), metadata, MakeApp("HubSpot"), "hubspot"));
+
+        Assert.Contains("Per-section budgets", system);
+        Assert.Contains("Overview: ~350-450 words", system);
+        Assert.Contains("Key Capabilities: ~400-550 words", system);
+        Assert.Contains("Implementation Considerations: ~450-600 words", system);
+        Assert.Contains("When to Use: ~300-400 words", system);
+    }
+
     private static SoftwareApplicationDescriptor MakeApp(string name) =>
         new(name, $"{name} description");
 

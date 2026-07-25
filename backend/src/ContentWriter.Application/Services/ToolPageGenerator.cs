@@ -4,6 +4,7 @@ using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace ContentWriter.Application.Services;
 
@@ -30,13 +31,16 @@ public sealed class ToolPageGenerator : IToolPageGenerator
     private const int MaxTools = 5;
     private readonly ISoftwareApplicationSchemaBuilder _softwareApplicationSchemaBuilder;
     private readonly IContentPromptBuilder _promptBuilder;
+    private readonly ILogger<ToolPageGenerator> _logger;
 
     public ToolPageGenerator(
         ISoftwareApplicationSchemaBuilder softwareApplicationSchemaBuilder,
-        IContentPromptBuilder promptBuilder)
+        IContentPromptBuilder promptBuilder,
+        ILogger<ToolPageGenerator> logger)
     {
         _softwareApplicationSchemaBuilder = softwareApplicationSchemaBuilder;
         _promptBuilder = promptBuilder;
+        _logger = logger;
     }
 
     public async Task<ToolGenerationResult> GenerateToolPagesAsync(
@@ -196,11 +200,16 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         var sections = LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'");
         var wordCount = ContentDocumentText.CountWords(sections);
 
+        // Soft gate (matches blog): out-of-range drafts still save so the user can review/regenerate.
+        // A hard throw here used to 502 the whole Step 6 batch via Task.WhenAll and discard siblings.
         if (wordCount < ContentLengthTargets.ToolMinWords || wordCount > ContentLengthTargets.ToolHardMaxWords)
         {
-            throw new ContentGenerationException(
-                $"Tool page for '{app.Name}' is {wordCount:N0} words; required range is " +
-                $"{ContentLengthTargets.ToolMinWords:N0}-{ContentLengthTargets.ToolHardMaxWords:N0}.");
+            _logger.LogWarning(
+                "Tool page for '{App}' is {Count} words (target {Minimum}-{Maximum}) — no expansion/trim pass, single attempt only; saving anyway.",
+                app.Name,
+                wordCount,
+                ContentLengthTargets.ToolMinWords,
+                ContentLengthTargets.ToolHardMaxWords);
         }
 
         var lede = sections[0] with { Tag = "h2" };

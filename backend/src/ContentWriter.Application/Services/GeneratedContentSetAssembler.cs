@@ -58,7 +58,8 @@ public static class GeneratedContentSetAssembler
                 c.Body ?? EmptyDocument(c.Title),
                 c.MetaDescription ?? string.Empty,
                 c.JsonLdSchema,
-                c.SourceAppOrder))
+                c.SourceAppOrder,
+                c.WordCount))
             .ToList();
 
         return toolRows.Count == 0 ? null : toolRows;

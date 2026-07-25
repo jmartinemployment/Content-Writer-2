@@ -136,6 +136,13 @@ export const CONTENT_LENGTH_TARGETS = {
     label: "50–125",
     definition: "High response rates; pitch a single, clear call-to-action.",
   },
+  tools: {
+    min: 1500,
+    max: 2500,
+    label: "1,500–2,500",
+    definition:
+      "Comprehensive single-platform guides — deep implementation context, capabilities, and when to use it.",
+  },
 } as const;
 
 export interface ColdOutreachEmailDraft {
@@ -183,6 +190,7 @@ export interface ToolPostDraft {
   metaDescription: string;
   jsonLdSchema: string | null;
   sourceAppOrder: number | null;
+  wordCount: number;
 }
 
 export interface CommitHtmlExportResult {

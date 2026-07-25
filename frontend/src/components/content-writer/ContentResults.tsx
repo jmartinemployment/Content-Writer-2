@@ -145,7 +145,7 @@ export default function ContentResults({
         <StepRow
           step={6}
           title="Tool documents"
-          description="Up to 5 standalone pages, one per tool listed in the pillar's AI Tool Section, each with its own SoftwareApplication JSON+LD."
+          description={`${CONTENT_LENGTH_TARGETS.tools.definition} Target ${CONTENT_LENGTH_TARGETS.tools.label} words — up to 5 pages from the pillar Tools section, each with SoftwareApplication JSON+LD.`}
           done={hasTools}
           disabled={!hasPillarBody || isGenerating}
           isRunning={generatingStep === "tools"}
@@ -581,10 +581,30 @@ function ToolPostsView({ tools }: { tools: ToolPostDraft[] }) {
 
 function ToolPostCard({ tool }: { tool: ToolPostDraft }) {
   const [showSchema, setShowSchema] = useState(false);
+  const underTarget =
+    tool.wordCount > 0 && tool.wordCount < CONTENT_LENGTH_TARGETS.tools.min;
+  const overTarget =
+    tool.wordCount > CONTENT_LENGTH_TARGETS.tools.max;
 
   return (
     <div className="rounded-lg border border-border bg-background p-4">
-      <h3 className="text-lg font-semibold text-foreground">{tool.title}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-lg font-semibold text-foreground">{tool.title}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {tool.wordCount > 0 && (
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                underTarget || overTarget
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-brand/10 text-brand"
+              }`}
+            >
+              {tool.wordCount} words
+            </span>
+          )}
+          <span className="text-xs text-muted">Target: {CONTENT_LENGTH_TARGETS.tools.label} words</span>
+        </div>
+      </div>
       <p className="mt-1 text-sm text-muted">{tool.metaDescription}</p>
       <a href={tool.toolUrl} className="mt-1 inline-block text-sm text-brand hover:underline" target="_blank">
         {tool.toolUrl}
