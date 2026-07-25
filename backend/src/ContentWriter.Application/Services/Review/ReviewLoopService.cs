@@ -16,6 +16,14 @@ public interface IReviewLoopService
     /// </summary>
     Task<List<ReviewVerdict>> RunForProjectAsync(
         Guid projectId, IReadOnlySet<GeneratedContentType>? contentTypes = null, string? toolSlugToTest = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Manually regenerates one row using its own most recent "Revise" verdict's notes — the
+    /// user-triggered counterpart to the automatic (currently dead at MaxAttempts=1) retry above.
+    /// For a ToolPost row this regenerates only that one tool, not the whole tool-post batch.
+    /// </summary>
+    Task<GeneratedContentSet> RewriteFromLatestVerdictAsync(
+        Guid projectId, Guid generatedContentId, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReviewLoopService : IReviewLoopService
@@ -76,6 +84,34 @@ public sealed class ReviewLoopService : IReviewLoopService
         }
 
         return verdicts;
+    }
+
+    public async Task<GeneratedContentSet> RewriteFromLatestVerdictAsync(
+        Guid projectId, Guid generatedContentId, CancellationToken cancellationToken = default)
+    {
+        var project = await _projectStore.GetAsync(projectId, cancellationToken)
+            ?? throw new ContentGenerationException($"Project {projectId} was not found.");
+
+        var row = project.GeneratedContents.FirstOrDefault(c => c.Id == generatedContentId)
+            ?? throw new ContentGenerationException($"Generated content {generatedContentId} was not found.");
+
+        var latestRevise = row.ReviewVerdicts
+            .Where(v => v.Status == ReviewVerdictStatus.Revise)
+            .OrderByDescending(v => v.CreatedAtUtc)
+            .FirstOrDefault()
+            ?? throw new ContentGenerationException("No outstanding revise verdict for this content.");
+
+        return row.ContentType switch
+        {
+            GeneratedContentType.TechnicalArticle =>
+                await _orchestrator.GeneratePillarBodyAsync(projectId, latestRevise.NotesJson, cancellationToken: cancellationToken),
+            GeneratedContentType.BlogPost =>
+                await _orchestrator.GenerateBlogAsync(projectId, latestRevise.NotesJson, cancellationToken),
+            GeneratedContentType.ToolPost =>
+                await _orchestrator.GenerateToolPagesAsync(
+                    projectId, latestRevise.NotesJson, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { row.Slug }, cancellationToken),
+            _ => throw new ContentGenerationException("Rewrite is not supported for this content type."),
+        };
     }
 
     /// <summary>For content types with exactly one row (pillar, blog) — regeneration replaces the row, so it's relooked-up by (project, type) each attempt rather than tracked by a stale Id.</summary>
@@ -146,7 +182,7 @@ public sealed class ReviewLoopService : IReviewLoopService
                     .Where(rv => rv.v.Status == ReviewVerdictStatus.Revise)
                     .Select(rv => $"Tool: {rv.row.Slug}\n{rv.v.NotesJson}"));
 
-            await _orchestrator.GenerateToolPagesAsync(projectId, combinedNotes, cancellationToken);
+            await _orchestrator.GenerateToolPagesAsync(projectId, combinedNotes, cancellationToken: cancellationToken);
         }
 
         return verdicts;
@@ -160,6 +196,7 @@ public sealed class ReviewLoopService : IReviewLoopService
         var verdict = new ReviewVerdict
         {
             GeneratedContentId = row.Id,
+            GeneratedContent = row,
             Status = outcome.Status,
             NotesJson = outcome.NotesJson,
             ReviewerProvider = outcome.ReviewerProvider,

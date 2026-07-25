@@ -59,17 +59,20 @@ internal static class ResearchBriefBuilder
                 break;
 
             case ResearchBriefPhase.Review:
-                AppendAuthoritativeSourcesBrief(sb, context);
-                AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 4, maxParagraphsPerFile: 1);
+                // Kept deliberately tight: Review already carries the full rendered body HTML of
+                // the content under review, so this brief only needs to supply enough to spot-check
+                // rubric point 4 (invented facts) — not a second research pass.
+                AppendAuthoritativeSourcesBrief(sb, context, maxSources: 2, maxHeadingsPerFile: 2, maxParagraphsPerFile: 2);
+                AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 2, maxParagraphsPerFile: 0);
                 break;
 
             case ResearchBriefPhase.BlogSection:
                 AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 3, maxParagraphsPerFile: 1);
-                AppendAuthoritativeSourcesBrief(sb, context);
+                AppendAuthoritativeSourcesBrief(sb, context, maxSources: 1, maxHeadingsPerFile: 2, maxParagraphsPerFile: 2);
                 break;
 
             case ResearchBriefPhase.ToolBody:
-                AppendAuthoritativeSourcesBrief(sb, context);
+                AppendAuthoritativeSourcesBrief(sb, context, maxSources: 1, maxHeadingsPerFile: 2, maxParagraphsPerFile: 2);
                 break;
         }
 
@@ -131,10 +134,16 @@ internal static class ResearchBriefBuilder
         }
     }
 
-    private static void AppendAuthoritativeSourcesBrief(StringBuilder sb, ProjectGenerationContext context)
+    private static void AppendAuthoritativeSourcesBrief(
+        StringBuilder sb,
+        ProjectGenerationContext context,
+        int maxSources = int.MaxValue,
+        int maxHeadingsPerFile = 6,
+        int maxParagraphsPerFile = 8)
     {
         var sources = context.KeywordSources
             .Where(s => AuthoritativeCategories.Contains(s.Category))
+            .Take(maxSources)
             .ToList();
 
         if (sources.Count == 0)
@@ -148,8 +157,8 @@ internal static class ResearchBriefBuilder
         {
             var label = FormatSourceLabel(source);
             sb.AppendLine($"[{label}]");
-            foreach (var h in source.Headings.Take(6)) sb.AppendLine($"- {h}");
-            foreach (var p in source.Paragraphs.Take(8)) sb.AppendLine($"- {p}");
+            foreach (var h in source.Headings.Take(maxHeadingsPerFile)) sb.AppendLine($"- {h}");
+            foreach (var p in source.Paragraphs.Take(maxParagraphsPerFile)) sb.AppendLine($"- {p}");
         }
     }
 

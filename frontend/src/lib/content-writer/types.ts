@@ -210,6 +210,7 @@ export interface GeneratedContentSet {
 export interface ReviewVerdict {
   id: string;
   generatedContentId: string;
+  contentType: GeneratedContentType;
   status: ReviewVerdictStatus;
   attemptCount: number;
   reviewerProvider: LlmProviderType;

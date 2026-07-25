@@ -144,10 +144,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     {
         await GeneratePillarPlanAsync(projectId, cancellationToken);
         await GeneratePillarBodyAsync(projectId, revisionNotes: null, cancellationToken);
-        return await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken);
+        return await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken: cancellationToken);
     }
 
-    public async Task<GeneratedContentSet> GenerateToolPagesAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default)
+    public async Task<GeneratedContentSet> GenerateToolPagesAsync(
+        Guid projectId, string? revisionNotes = null, IReadOnlySet<string>? toolSlugsToRegenerate = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
         var articleRow = RequireCompletePillar(project);
@@ -158,8 +159,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         _logger.LogInformation("Generating tool pages for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
-        RemoveGeneratedContents(project, GeneratedContentType.ToolPost);
-
         var generation = await _toolPageGenerator.GenerateToolPagesAsync(
             project,
             articleRow,
@@ -168,12 +167,8 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             provider,
             articleUrl,
             revisionNotes,
+            toolSlugsToRegenerate,
             cancellationToken);
-
-        foreach (var toolRow in generation.ToolPosts)
-        {
-            await AddContentAsync(project, provider.ProviderType, toolRow, cancellationToken);
-        }
 
         if (generation.Outcome != ToolGenerationOutcome.Success)
         {
@@ -183,6 +178,25 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
         else
         {
+            // Only remove the rows we're actually replacing, and only now that generation has
+            // succeeded — a failed/retried-out run must never destroy tool pages that were already
+            // generated successfully in a prior run. A full run (no slug filter) still replaces the
+            // entire existing ToolPost set, same as before; a targeted rewrite only replaces the
+            // slug(s) it regenerated.
+            var newSlugs = generation.ToolPosts.Select(r => r.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var toRemove = project.GeneratedContents
+                .Where(c => c.ContentType == GeneratedContentType.ToolPost && newSlugs.Contains(c.Slug))
+                .ToList();
+            foreach (var row in toRemove)
+            {
+                project.GeneratedContents.Remove(row);
+            }
+
+            foreach (var toolRow in generation.ToolPosts)
+            {
+                await AddContentAsync(project, provider.ProviderType, toolRow, cancellationToken);
+            }
+
             // Tool pages (and their real slugs/URLs) didn't exist when the pillar's JSON+LD was first
             // built in GeneratePillarBodyAsync, so its SoftwareApplication entries had no "url". Now
             // that ToolPageGenerator has injected real hrefs into articleRow.Body's Tools section,
@@ -212,8 +226,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         _logger.LogInformation("Generating blog content for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
-        RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
-
         var (blogDraft, ledeType) = await GenerateBlogDraftAsync(provider, context, article, revisionNotes, cancellationToken);
         var blogSlug = SlugHelper.Slugify(blogDraft.Title);
         var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
@@ -241,6 +253,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var summaryVariants = await GenerateSummaryVariantsAsync(
             provider, context, blog.Title, blog.Body, blog.MetaDescription, "blog", cancellationToken);
+
+        // Only remove the existing BlogPost row now that generation has fully succeeded — a
+        // failed/retried-out run must never destroy a blog that was already generated successfully
+        // in a prior run (see GenerateImagePromptsAsync's identical fix for the same bug class).
+        RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
 
         await AddContentAsync(project, provider.ProviderType, new GeneratedContent
         {
@@ -470,7 +487,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     {
         await GeneratePillarPlanAsync(projectId, cancellationToken);
         await GeneratePillarBodyAsync(projectId, revisionNotes: null, cancellationToken);
-        await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken);
+        await GenerateToolPagesAsync(projectId, revisionNotes: null, cancellationToken: cancellationToken);
         await GenerateBlogAsync(projectId, revisionNotes: null, cancellationToken);
         await GenerateSocialAsync(projectId, cancellationToken);
         await GenerateColdOutreachAsync(projectId, cancellationToken);

@@ -5,6 +5,7 @@ import {
   commitHtmlExportToGitHub,
   downloadHtmlExport,
   runReview,
+  rewriteFromLatestVerdict,
   ApiError,
 } from "@/lib/content-writer/api";
 import type {
@@ -16,11 +17,15 @@ import type {
 export default function ReviewPublishPanel({
   projectId,
   result,
+  onGenerated,
 }: {
   projectId: string;
   result: GeneratedContentSet | null;
+  onGenerated: (result: GeneratedContentSet) => void;
 }) {
   const [verdicts, setVerdicts] = useState<ReviewVerdict[] | null>(null);
+  const [rewritingId, setRewritingId] = useState<string | null>(null);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewTypes, setReviewTypes] = useState({ pillar: true, blog: true, tools: true });
@@ -53,6 +58,23 @@ export default function ReviewPublishPanel({
       setReviewError(err instanceof ApiError ? err.message : "Review failed.");
     } finally {
       setIsReviewing(false);
+    }
+  }
+
+  async function handleRewrite(verdict: ReviewVerdict) {
+    setRewriteError(null);
+    setRewritingId(verdict.id);
+    try {
+      const next = await rewriteFromLatestVerdict(projectId, verdict.generatedContentId);
+      onGenerated(next);
+      // The rewritten content no longer matches the notes that triggered this rewrite — drop the
+      // verdict locally so its "Revise" badge can't keep showing next to already-rewritten
+      // content. A fresh, real verdict requires clicking "Re-run review" again.
+      setVerdicts((prev) => prev?.filter((v) => v.id !== verdict.id) ?? prev);
+    } catch (err) {
+      setRewriteError(err instanceof ApiError ? err.message : "Rewrite failed.");
+    } finally {
+      setRewritingId(null);
     }
   }
 
@@ -141,8 +163,14 @@ export default function ReviewPublishPanel({
             {approvedCount} approved, {exhaustedCount} exhausted, {verdicts.length} rows reviewed.
           </p>
           {verdicts.map((v) => (
-            <VerdictRow key={v.id} verdict={v} />
+            <VerdictRow
+              key={v.id}
+              verdict={v}
+              onRewrite={handleRewrite}
+              isRewriting={rewritingId === v.id}
+            />
           ))}
+          {rewriteError && <p className="text-sm text-red-600">{rewriteError}</p>}
         </div>
       )}
 
@@ -205,7 +233,15 @@ export default function ReviewPublishPanel({
   );
 }
 
-function VerdictRow({ verdict }: { verdict: ReviewVerdict }) {
+function VerdictRow({
+  verdict,
+  onRewrite,
+  isRewriting,
+}: {
+  verdict: ReviewVerdict;
+  onRewrite: (verdict: ReviewVerdict) => void;
+  isRewriting: boolean;
+}) {
   const badgeClass =
     verdict.status === "Approved"
       ? "bg-green-100 text-green-800"
@@ -236,6 +272,16 @@ function VerdictRow({ verdict }: { verdict: ReviewVerdict }) {
       </div>
       {verdict.retryReason && <p className="mt-2 text-amber-700">{verdict.retryReason}</p>}
       {notes && <p className="mt-2 text-foreground">{notes}</p>}
+      {verdict.status === "Revise" && (
+        <button
+          type="button"
+          onClick={() => onRewrite(verdict)}
+          disabled={isRewriting}
+          className="mt-2 rounded-md border border-brand px-2 py-1 text-xs font-semibold text-brand transition-colors hover:bg-brand/5 disabled:opacity-60"
+        >
+          {isRewriting ? "Rewriting..." : "Rewrite with feedback"}
+        </button>
+      )}
     </div>
   );
 }

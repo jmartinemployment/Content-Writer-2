@@ -107,4 +107,48 @@ public class RevisionNotesPromptTests
 
         Assert.DoesNotContain("REVISION REQUIRED", SystemPrompt(request));
     }
+
+    private static string UserPrompt(ChatCompletionRequest request) =>
+        request.Messages.First(m => m.Role == ChatRole.User).Content;
+
+    private static List<KeywordSourceSummary> MakeAuthoritativeSources(int count) =>
+        Enumerable.Range(1, count)
+            .Select(i => new KeywordSourceSummary(
+                KeywordSourceCategory.Wikipedia,
+                $"Source {i}",
+                $"source-{i}.html",
+                Headings: [$"Heading {i}"],
+                Paragraphs: [$"Paragraph {i}"]))
+            .ToList();
+
+    [Fact]
+    public void BuildToolBodyPrompt_caps_authoritative_sources_to_one_even_when_project_has_several()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Pillar", "Meta", [], []);
+        var context = MakeContext() with { KeywordSources = MakeAuthoritativeSources(3) };
+
+        var request = builder.BuildToolBodyPrompt(context, metadata, MakeApp("HubSpot"), "hubspot");
+
+        var user = UserPrompt(request);
+        Assert.Contains("Source 1", user);
+        Assert.DoesNotContain("Source 2", user);
+        Assert.DoesNotContain("Source 3", user);
+    }
+
+    [Fact]
+    public void BuildArticleSectionPrompt_does_not_cap_authoritative_sources_existing_pillar_behavior_unchanged()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Section A"]);
+        var context = MakeContext() with { KeywordSources = MakeAuthoritativeSources(3) };
+
+        var request = builder.BuildArticleSectionPrompt(
+            context, metadata, "Section A", 0, 1, ["Section A"], isRegeneration: false);
+
+        var user = UserPrompt(request);
+        Assert.Contains("Source 1", user);
+        Assert.Contains("Source 2", user);
+        Assert.Contains("Source 3", user);
+    }
 }

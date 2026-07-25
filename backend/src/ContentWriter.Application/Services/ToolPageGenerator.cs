@@ -17,6 +17,7 @@ public interface IToolPageGenerator
         IContentGenerationProvider provider,
         string pillarArticleUrl,
         string? revisionNotes = null,
+        IReadOnlySet<string>? toolSlugsToRegenerate = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -46,6 +47,7 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         IContentGenerationProvider provider,
         string pillarArticleUrl,
         string? revisionNotes = null,
+        IReadOnlySet<string>? toolSlugsToRegenerate = null,
         CancellationToken cancellationToken = default)
     {
         var extraction = ToolSectionExtractor.DiagnoseExtraction(articleRow.Body, metadata.SectionOutline);
@@ -63,18 +65,32 @@ public sealed class ToolPageGenerator : IToolPageGenerator
                 Order: index + 1))
             .ToList();
 
-        var rows = (await Task.WhenAll(slotted.Select(slot => GenerateOneToolAsync(
+        // A full run (no filter) regenerates every tool, same as before. A targeted rewrite only
+        // regenerates the requested slug(s) — the rest of the current tool-post set is left
+        // untouched by the caller (see ContentGenerationOrchestrator.GenerateToolPagesAsync).
+        var slotsToGenerate = toolSlugsToRegenerate is null or { Count: 0 }
+            ? slotted
+            : slotted.Where(s => toolSlugsToRegenerate.Contains(s.Slug)).ToList();
+        if (slotsToGenerate.Count == 0)
+        {
+            throw new ContentGenerationException(
+                "None of the requested tool slugs match the pillar's current Tools section.");
+        }
+
+        var rows = (await Task.WhenAll(slotsToGenerate.Select(slot => GenerateOneToolAsync(
                 project, metadata, context, provider, pillarArticleUrl,
                 slot.App, slot.Slug, slot.Order, revisionNotes, cancellationToken))))
             .ToList();
 
         if (articleRow.Body is not null)
         {
+            // Always reinject links for the full current tool set, not just the ones regenerated
+            // this call — a targeted rewrite must not drop links for tools left untouched.
             articleRow.Body = ToolSectionExtractor.InjectToolLinks(
                 articleRow.Body,
                 metadata.SectionOutline,
                 $"{context.ToolBaseUrl.TrimEnd('/')}/{context.Department}",
-                rows.Select(r => (r.SourceAppName!, r.Slug)).ToList());
+                slotted.Select(s => (s.App.Name, s.Slug)).ToList());
         }
 
         return new ToolGenerationResult(ToolGenerationOutcome.Success, rows);

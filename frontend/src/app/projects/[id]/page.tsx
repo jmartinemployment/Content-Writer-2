@@ -86,7 +86,7 @@ export default function ProjectPage() {
           onGenerated={setGenerated}
         />
 
-        <ReviewPublishPanel projectId={project.id} result={generated} />
+        <ReviewPublishPanel projectId={project.id} result={generated} onGenerated={setGenerated} />
       </div>
     </div>
   );

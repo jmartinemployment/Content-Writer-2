@@ -30,7 +30,7 @@ public class ReviewController : ControllerBase
 
             var verdicts = await _reviewLoop.RunForProjectAsync(projectId, contentTypes, request?.ToolSlugToTest, cancellationToken);
             return Ok(verdicts.Select(v => new ReviewVerdictResponse(
-                v.Id, v.GeneratedContentId, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
+                v.Id, v.GeneratedContentId, v.GeneratedContent!.ContentType, v.Status, v.AttemptCount, v.ReviewerProvider, v.ReviewerModel,
                 v.NotesJson, v.RetryCount, v.RetryReason, v.CreatedAtUtc)).ToList());
         }
         catch (ContentGenerationException ex)
@@ -39,11 +39,29 @@ public class ReviewController : ControllerBase
             return Problem(ex.Message, statusCode: 400, title: "Review failed");
         }
     }
+
+    [HttpPost("rewrite")]
+    public async Task<ActionResult<Application.DTOs.GeneratedContentSet>> Rewrite(
+        Guid projectId, [FromBody] RewriteRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _reviewLoop.RewriteFromLatestVerdictAsync(projectId, request.GeneratedContentId, cancellationToken);
+            return Ok(result);
+        }
+        catch (ContentGenerationException ex)
+        {
+            _logger.LogWarning(ex, "Rewrite failed for project {ProjectId}, content {GeneratedContentId}", projectId, request.GeneratedContentId);
+            return Problem(ex.Message, statusCode: 400, title: "Rewrite failed");
+        }
+    }
 }
 
 public sealed record RunReviewRequest(List<GeneratedContentType>? ContentTypes, string? ToolSlugToTest = null);
 
+public sealed record RewriteRequest(Guid GeneratedContentId);
+
 public sealed record ReviewVerdictResponse(
-    Guid Id, Guid GeneratedContentId, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,
+    Guid Id, Guid GeneratedContentId, GeneratedContentType ContentType, Domain.Enums.ReviewVerdictStatus Status, int AttemptCount,
     Domain.Enums.LlmProviderType ReviewerProvider, string ReviewerModel, string NotesJson,
     int RetryCount, string? RetryReason, DateTime CreatedAtUtc);

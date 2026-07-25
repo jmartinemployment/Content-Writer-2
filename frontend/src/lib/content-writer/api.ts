@@ -188,6 +188,13 @@ export function runReview(projectId: string, contentTypes?: string[], toolSlugTo
   });
 }
 
+export function rewriteFromLatestVerdict(projectId: string, generatedContentId: string): Promise<GeneratedContentSet> {
+  return request<GeneratedContentSet>(`/api/projects/${projectId}/review/rewrite`, {
+    method: "POST",
+    body: JSON.stringify({ generatedContentId }),
+  });
+}
+
 export async function getGeekBackendCategories(clientId: string, lang = "en"): Promise<CategoryOption[]> {
   const response = await fetch(`${API_BASE_URL}/api/categories?clientId=${clientId}&lang=${lang}`);
   if (!response.ok) {

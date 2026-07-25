@@ -11,7 +11,8 @@ public interface IContentGenerationOrchestrator
 
     Task<GeneratedContentSet> GeneratePillarAsync(Guid projectId, CancellationToken cancellationToken = default);
 
-    Task<GeneratedContentSet> GenerateToolPagesAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default);
+    Task<GeneratedContentSet> GenerateToolPagesAsync(
+        Guid projectId, string? revisionNotes = null, IReadOnlySet<string>? toolSlugsToRegenerate = null, CancellationToken cancellationToken = default);
 
     Task<GeneratedContentSet> GenerateBlogAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default);
 
