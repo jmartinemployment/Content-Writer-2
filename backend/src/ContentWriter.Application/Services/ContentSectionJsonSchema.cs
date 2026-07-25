@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
-using System.Text.Json.Serialization.Metadata;
 using ContentWriter.Domain.Entities;
 
 namespace ContentWriter.Application.Services;
@@ -17,6 +16,14 @@ namespace ContentWriter.Application.Services;
 /// callback also enforces OpenAI/Groq strict-mode's <c>additionalProperties: false</c> +
 /// full-<c>required</c> requirements across every object node, and swaps <c>oneOf</c> for
 /// <c>anyOf</c> (Groq's structured outputs don't support <c>oneOf</c>/<c>const</c>).
+///
+/// The exporter's default recursion for <see cref="Section.Children"/> emits a bare
+/// <c>{"$ref":"#"}</c> (root self-reference). That's rejected by OpenAI strict mode as soon as the
+/// schema is nested inside a wrapper (e.g. <see cref="SectionsArraySchema"/>'s <c>{"sections":[...]}</c>
+/// envelope) — OpenAI requires every <c>$ref</c> to point at a genuine top-level <c>$defs</c> entry,
+/// not the document root or an arbitrary internal JSON pointer. <see cref="RewriteRootSelfReferences"/>
+/// fixes this once, after the exporter (and its <c>TransformNode</c> callback) have fully finished —
+/// it is a separate, later pass, not interleaved with <c>TransformNode</c>.
 /// </summary>
 public static class ContentSectionJsonSchema
 {
@@ -27,20 +34,96 @@ public static class ContentSectionJsonSchema
 
     /// <summary>Schema for a single <see cref="Section"/> object — used by
     /// <c>BuildArticleSectionPrompt</c>/<c>BuildArticleFaqSectionPrompt</c>/<c>BuildBlogSectionPrompt</c>.</summary>
-    public static string SectionSchema { get; } =
-        JsonSchemaExporter.GetJsonSchemaAsNode(LlmResponseJsonParser.SectionJsonOptions, typeof(Section), ExporterOptions)
-            .ToJsonString();
+    public static string SectionSchema { get; } = BuildSectionSchema();
 
     /// <summary>Schema for a top-level <c>{"sections": [...]}</c> response — used by prompts that
-    /// generate/expand/trim a whole body's worth of sections at once (tool body, blog body,
-    /// depth-expansion, word-count expansion/trim).</summary>
-    public static string SectionsArraySchema { get; } =
-        JsonSchemaExporter.GetJsonSchemaAsNode(LlmResponseJsonParser.SectionJsonOptions, typeof(SectionsArrayEnvelope), ExporterOptions)
-            .ToJsonString();
+    /// generate/expand/trim a whole body's worth of sections at once (tool body, blog body).</summary>
+    public static string SectionsArraySchema { get; } = BuildSectionsArraySchema();
 
-    /// <summary>Wrapper type purely so the exporter generates a <c>{"sections": [...]}</c>-shaped
-    /// schema — never actually (de)serialized as this type, only used to derive the schema shape.</summary>
-    private sealed record SectionsArrayEnvelope(IReadOnlyList<Section> Sections);
+    private static string BuildSectionSchema()
+    {
+        var sectionNode = ExportSectionNode();
+
+        var root = new JsonObject
+        {
+            ["$ref"] = "#/$defs/section",
+            ["$defs"] = new JsonObject { ["section"] = sectionNode },
+        };
+
+        return root.ToJsonString();
+    }
+
+    private static string BuildSectionsArraySchema()
+    {
+        // A fresh clone of the already-transformed, already-rewritten node — cloning happens after
+        // both the exporter/TransformNode pass and the $ref rewrite, so the clone needs no
+        // independent re-processing. A JsonNode can only have one parent, so the same instance
+        // from BuildSectionSchema can't be reused directly here.
+        var sectionNode = ExportSectionNode();
+        var clonedForArray = JsonNode.Parse(sectionNode.ToJsonString())!;
+
+        var root = new JsonObject
+        {
+            ["type"] = "object",
+            ["additionalProperties"] = false,
+            ["required"] = new JsonArray { "sections" },
+            ["properties"] = new JsonObject
+            {
+                ["sections"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["$ref"] = "#/$defs/section" },
+                },
+            },
+            ["$defs"] = new JsonObject { ["section"] = clonedForArray },
+        };
+
+        return root.ToJsonString();
+    }
+
+    /// <summary>Runs the exporter (which internally invokes <see cref="TransformNode"/> once per
+    /// node) to completion, then rewrites the resulting tree's self-references. The rewrite is a
+    /// distinct, later pass — <c>TransformNode</c> has already finished by the time it runs, so
+    /// there's no interleaving and no risk of it re-touching (or undoing) the rewritten refs.</summary>
+    private static JsonNode ExportSectionNode()
+    {
+        var sectionNode = JsonSchemaExporter.GetJsonSchemaAsNode(
+            LlmResponseJsonParser.SectionJsonOptions, typeof(Section), ExporterOptions);
+        RewriteRootSelfReferences(sectionNode);
+        return sectionNode;
+    }
+
+    /// <summary>Recursively finds any <c>{"$ref":"#"}</c> node (the exporter's root-recursion
+    /// marker for <see cref="Section.Children"/>) and rewrites it in place to
+    /// <c>{"$ref":"#/$defs/section"}</c> — the only self-reference the exporter produces.</summary>
+    private static void RewriteRootSelfReferences(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                if (obj.TryGetPropertyValue("$ref", out var refNode)
+                    && refNode is JsonValue refValue
+                    && refValue.GetValue<string>() == "#")
+                {
+                    obj["$ref"] = "#/$defs/section";
+                }
+
+                foreach (var property in obj.ToList())
+                {
+                    RewriteRootSelfReferences(property.Value);
+                }
+
+                break;
+
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    RewriteRootSelfReferences(item);
+                }
+
+                break;
+        }
+    }
 
     private static JsonNode TransformNode(JsonSchemaExporterContext context, JsonNode node)
     {
