@@ -34,18 +34,22 @@ public sealed class EditorialReviewService : IEditorialReviewService
         1. Pain-first framing: does every H2 section open from the practitioner's problem before
            introducing the solution? Flag any section that leads with technology or capability
            rather than pain.
-        2. Specificity: does the content name concrete outcomes, measurable reductions, or real
-           workflow changes — or does it make generic claims that could apply to any software
-           product? Flag any generic claim.
+        2. Specificity: prefer concrete workflow changes and labeled hypothetical outcomes (e.g.
+           "in a representative mid-sized manufacturer…") over vague claims that could apply to
+           any product. Flag generic puffery. Do NOT demand exact fines, real-world named case
+           studies, or unverifiable percentages when the research context does not support them —
+           those are writer-forbidden inventions, not missing requirements.
         3. Keyword as pain point: does the content treat the target keyword as a problem to be
            solved, not a topic to describe? Flag any passage that reads as feature description
            rather than problem resolution.
-        4. No invented facts: does the content make specific claims (statistics, named product
-           features, regulatory citations) that cannot be verified from the supplied research
-           context? Flag any unverifiable specific claim.
+        4. No invented facts: flag specific claims (statistics, named product features, regulatory
+           citations) that cannot be verified from the supplied research context. When flagging,
+           tell the writer to remove the claim or replace it with an explicitly labeled
+           hypothetical — never instruct them to invent a real fine amount, client name, or
+           case-study statistic.
         5. Structural hygiene: no preamble before the first H2, no "Related Links" or
            "Further Reading" H2, no duplicate heading text, meta description between 140-160
-           characters.
+           characters (check the Meta description field supplied below).
 
         Respond with ONLY a JSON object, no markdown fences:
         {"verdict": "approved" | "revise", "notes": "<string|null>"}
@@ -56,7 +60,9 @@ public sealed class EditorialReviewService : IEditorialReviewService
           actionable changes the writer must make — one item per failure, no prose evaluation, no
           explanation of why it matters. Each item must name the exact section or paragraph it
           applies to and state precisely what must change. Copy heading text exactly as it appears
-          in the content you were given — do not paraphrase or normalize it.
+          in the content you were given — do not paraphrase or normalize it. For opening-lede
+          issues, use the lede's exact H2 heading text. For meta length/hype issues, use
+          [Section: "Meta description"].
 
         Notes format when verdict is "revise" — use exactly this structure:
         1. [Section: "{exact heading text}"] {one sentence stating what must change, not why}
@@ -71,6 +77,10 @@ public sealed class EditorialReviewService : IEditorialReviewService
         Example of an incorrect notes entry (too vague, prose evaluation, no section reference):
         "The content is too generic and doesn't feel pain-focused enough. Consider rewriting some
         sections."
+
+        Example of an incorrect notes entry (demands unverifiable invention):
+        "1. [Section: \"ROI\"] Add the exact IRS penalty amount and a real client case study with
+        percentage savings."
         """;
 
     private readonly IContentProviderFactory _providerFactory;
@@ -98,6 +108,7 @@ public sealed class EditorialReviewService : IEditorialReviewService
             {researchBrief}
 
             Title: {content.Title}
+            Meta description ({(content.MetaDescription ?? string.Empty).Length} chars): {content.MetaDescription ?? "(missing)"}
 
             Body HTML:
             {(content.Body is null ? string.Empty : SectionHtmlRenderer.RenderFragment(content.Body))}

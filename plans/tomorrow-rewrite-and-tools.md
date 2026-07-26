@@ -78,8 +78,9 @@ Already recorded under **Pillar Tools section generation (known limitation)** in
 
 ## Todos
 
-- [ ] Pass revision notes into `BuildArticleLedePrompt` / `GenerateArticleBodyAsync` lede call
-- [ ] Apply meta-description hygiene notes on pillar rewrite
-- [ ] Align `EditorialReviewService` rubric with no-invented-facts writer rules
-- [ ] Split Tools H2 into per-platform LLM calls and assemble (AGENTS.md)
-- [ ] Tests for lede/meta revise; AGENTS editorial-rewrite note; single deploy then pause
+- [x] Pass revision notes into `BuildArticleLedePrompt` / `GenerateArticleBodyAsync` lede call
+- [x] Apply meta-description hygiene notes on pillar rewrite
+- [x] Align `EditorialReviewService` rubric with no-invented-facts writer rules
+- [x] Split Tools H2 into per-platform LLM calls and assemble (AGENTS.md)
+- [x] Tests for lede/meta revise; AGENTS editorial-rewrite note
+- [ ] Single deploy then pause while re-testing end-to-end (in-memory projects)

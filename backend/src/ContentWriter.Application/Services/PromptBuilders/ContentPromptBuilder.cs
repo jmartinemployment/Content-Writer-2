@@ -14,7 +14,21 @@ public interface IContentPromptBuilder
 
     ChatCompletionRequest BuildArticleMetadataPrompt(ProjectGenerationContext context);
 
-    ChatCompletionRequest BuildArticleLedePrompt(ProjectGenerationContext context, ArticleMetadataDraft metadata);
+    ChatCompletionRequest BuildArticleLedePrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string? revisionNotes = null,
+        string? existingLedeHeading = null);
+
+    /// <summary>
+    /// Small revise pass for meta description (and title only when notes explicitly demand it).
+    /// Returns null when <paramref name="revisionNotes"/> do not mention meta/title hygiene.
+    /// </summary>
+    ChatCompletionRequest? BuildArticleMetaRevisionPrompt(
+        ProjectGenerationContext context,
+        string title,
+        string metaDescription,
+        string revisionNotes);
 
     ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
@@ -30,6 +44,26 @@ public interface IContentPromptBuilder
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> faqQuestions,
+        bool isRegeneration,
+        string? revisionNotes = null);
+
+    /// <summary>Lightweight first Tools call: ordered list of 4–5 real platform names (no nested section JSON).</summary>
+    ChatCompletionRequest BuildToolsPlatformListPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string toolsSectionHeading,
+        bool isRegeneration,
+        string? revisionNotes = null);
+
+    /// <summary>One platform h3 subtree (overview, capability list, implementer h4) for the Tools section.</summary>
+    ChatCompletionRequest BuildToolsPlatformChildPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string toolsSectionHeading,
+        string platformName,
+        IReadOnlyList<string> allPlatforms,
+        int platformIndex,
+        int platformCount,
         bool isRegeneration,
         string? revisionNotes = null);
 
@@ -190,7 +224,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1536);
     }
 
-    public ChatCompletionRequest BuildArticleLedePrompt(ProjectGenerationContext context, ArticleMetadataDraft metadata)
+    public ChatCompletionRequest BuildArticleLedePrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string? revisionNotes = null,
+        string? existingLedeHeading = null)
     {
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
@@ -202,6 +240,13 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
             .AppendLine(LedeJsonContract)
             .ToString();
+
+        var ledeNotes = ScopeRevisionNotesForLede(revisionNotes, existingLedeHeading, metadata.SectionOutline);
+        var revisionBlock = BuildRevisionNotesBlock(ledeNotes, sectionHeading: existingLedeHeading);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
 
         var user = new StringBuilder()
             .AppendLine($"Article title: {metadata.Title}")
@@ -215,6 +260,42 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1024);
     }
 
+    public ChatCompletionRequest? BuildArticleMetaRevisionPrompt(
+        ProjectGenerationContext context,
+        string title,
+        string metaDescription,
+        string revisionNotes)
+    {
+        var metaNotes = ScopeRevisionNotesForMeta(revisionNotes);
+        if (string.IsNullOrWhiteSpace(metaNotes))
+        {
+            return null;
+        }
+
+        var system = new StringBuilder()
+            .AppendLine("You revise SEO title and meta description for a TechnicalArticle pillar.")
+            .AppendLine("Apply ONLY the reviewer's meta/title notes below. Keep the plan/outline unchanged.")
+            .AppendLine("Meta description must be 140-160 characters, factual, no hype words like \"cutting-edge\".")
+            .AppendLine("Change the title only when a note explicitly targets Title; otherwise return the current title unchanged.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine("{\"title\": string, \"metaDescription\": string}")
+            .AppendLine()
+            .AppendLine("REVISION REQUIRED — address each of the following:")
+            .AppendLine(metaNotes.Trim())
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Current title: {title}")
+            .AppendLine($"Current meta description ({metaDescription.Length} chars): {metaDescription}")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.3,
+            MaxOutputTokens: 512);
+    }
+
     public ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
@@ -226,7 +307,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
         string? revisionNotes = null)
     {
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
-        var isTools = PillarSectionClassifier.IsToolsSection(sectionHeading);
         var isBestPractices = PillarSectionClassifier.IsBestPracticesSection(sectionHeading);
         var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
 
@@ -248,11 +328,6 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("\"in a representative scenario\". Never phrase it as something that already happened to a real client.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
-
-        if (isTools)
-        {
-            system += Environment.NewLine + BuildToolsSectionGuidance(context);
-        }
 
         if (isBestPractices)
         {
@@ -290,10 +365,109 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return WithSectionSchema(new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
             Temperature: isRegeneration ? 0.72 : 0.65,
-            // Tools sections nest 4–5 platform h3s (each with list + h4 implementer child) as one
-            // JSON object — 4096 truncates mid-JSON under that load; match tool-page body budget.
-            // Known limitation / preferred fix: see AGENTS.md "Pillar Tools section generation".
-            MaxOutputTokens: isTools ? 8192 : 2048));
+            MaxOutputTokens: 2048));
+    }
+
+    public ChatCompletionRequest BuildToolsPlatformListPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string toolsSectionHeading,
+        bool isRegeneration,
+        string? revisionNotes = null)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine("Choose 4-5 major platforms or tools for the Tools H2 of a TechnicalArticle pillar.")
+            .AppendLine("Only real, verifiable, well-known products relevant to the target keyword. Never invent a tool name or vendor.")
+            .AppendLine("Prefer depth on 4 platforms over shallow coverage of 6.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine("{\"platforms\": string[] (4-5 product names, display order)}")
+            .ToString();
+
+        if (isRegeneration)
+        {
+            system += Environment.NewLine + "REGENERATION: pick a fresh but still accurate platform set when the notes call for it; otherwise keep strong existing choices.";
+        }
+
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: toolsSectionHeading);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection,
+                $"List platforms for Tools section \"{toolsSectionHeading}\"."))
+            .AppendLine()
+            .AppendLine($"Article title: {metadata.Title}")
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Tools section heading: {toolsSectionHeading}")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: isRegeneration ? 0.55 : 0.4,
+            MaxOutputTokens: 512);
+    }
+
+    public ChatCompletionRequest BuildToolsPlatformChildPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string toolsSectionHeading,
+        string platformName,
+        IReadOnlyList<string> allPlatforms,
+        int platformIndex,
+        int platformCount,
+        bool isRegeneration,
+        string? revisionNotes = null)
+    {
+        var perPlatformTarget =
+            $"{ContentLengthTargets.PillarToolsSectionMinWords / Math.Max(platformCount, 1)}" +
+            $"-{ContentLengthTargets.PillarToolsSectionTargetMaxWords / Math.Max(platformCount, 1)}";
+
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine("Write ONE platform subsection for the Tools H2 of a TechnicalArticle pillar — third person, expert, consultative.")
+            .AppendLine("Respond with ONLY a single valid JSON Section object — no markdown fences, no commentary, no other platforms.")
+            .AppendLine(SectionJsonContract)
+            .AppendLine("This section's own tag is \"h3\". Heading must be exactly the assigned platform name.")
+            .AppendLine("Include: a brief overview paragraph of what the platform does for this use case, then a list paragraph with 2-4 factual capability bullets.")
+            .AppendLine("Then one child Section (tag h4, heading \"How an AI implementer helps with {Platform}\").")
+            .AppendLine(BuildToolsPlatformChildGuidance(context, platformName))
+            .AppendLine($"Target ~{perPlatformTarget} words for this platform subtree so the full Tools section lands near {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words.")
+            .AppendLine("Never invent a feature or capability; if unsure a feature exists, describe it generically instead of naming it.")
+            .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
+            .AppendLine("A quantified outcome is fine only if explicitly labeled hypothetical/illustrative.")
+            .ToString();
+
+        if (isRegeneration)
+        {
+            system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
+        }
+
+        // Scope by platform name so Tool:/section notes about other platforms do not leak in.
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: platformName);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
+        var platformList = string.Join(", ", allPlatforms.Select((p, i) => i == platformIndex ? $"[{p}]" : p));
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection,
+                $"Write Tools platform {platformIndex + 1} of {platformCount}: \"{platformName}\"."))
+            .AppendLine()
+            .AppendLine($"Article title: {metadata.Title}")
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Tools section heading: {toolsSectionHeading}")
+            .AppendLine($"Platforms in this Tools section (write ONLY the bracketed one): {platformList}")
+            .AppendLine($"Platform to write: {platformName}")
+            .ToString();
+
+        return WithSectionSchema(new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: isRegeneration ? 0.72 : 0.65,
+            MaxOutputTokens: 2048));
     }
 
     public ChatCompletionRequest BuildArticleFaqSectionPrompt(
@@ -737,6 +911,132 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1024);
     }
 
+    private static readonly Regex SectionTagRegex = new(
+        @"\[Section:\s*""(?<heading>[^""]+)""\]",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Lede-scoped notes: tagged with the current lede heading, or a section title that is not in
+    /// the body outline (lede-only titles). Meta/title and FAQ notes are excluded — those have
+    /// their own revise paths.
+    /// </summary>
+    internal static string? ScopeRevisionNotesForLede(
+        string? revisionNotes,
+        string? existingLedeHeading,
+        IReadOnlyList<string> sectionOutline)
+    {
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            return null;
+        }
+
+        if (!revisionNotes.Contains("[Section:", StringComparison.Ordinal))
+        {
+            return revisionNotes;
+        }
+
+        var ownedElsewhere = new HashSet<string>(sectionOutline, StringComparer.OrdinalIgnoreCase)
+        {
+            "People Also Ask",
+            "Meta description",
+            "Meta Description",
+            "Title",
+        };
+
+        var kept = new List<string>();
+        foreach (var item in SplitNumberedNoteItems(revisionNotes))
+        {
+            var match = SectionTagRegex.Match(item);
+            if (!match.Success)
+            {
+                kept.Add(item);
+                continue;
+            }
+
+            var heading = match.Groups["heading"].Value.Trim();
+            var isCurrentLede = !string.IsNullOrWhiteSpace(existingLedeHeading)
+                && heading.Equals(existingLedeHeading, StringComparison.OrdinalIgnoreCase);
+            var isLedeOnlyTitle = !ownedElsewhere.Contains(heading);
+
+            if (isCurrentLede || isLedeOnlyTitle)
+            {
+                kept.Add(item);
+            }
+        }
+
+        return kept.Count == 0 ? null : string.Join('\n', kept);
+    }
+
+    /// <summary>Notes whose [Section: ...] heading targets meta description or title hygiene.</summary>
+    internal static string? ScopeRevisionNotesForMeta(string? revisionNotes)
+    {
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            return null;
+        }
+
+        if (!revisionNotes.Contains("[Section:", StringComparison.Ordinal))
+        {
+            // Unstructured feedback: only treat as meta work when it clearly mentions meta/title hygiene.
+            return MentionsMetaOrTitleHygiene(revisionNotes) ? revisionNotes : null;
+        }
+
+        var kept = new List<string>();
+        foreach (var item in SplitNumberedNoteItems(revisionNotes))
+        {
+            var match = SectionTagRegex.Match(item);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var heading = match.Groups["heading"].Value.Trim();
+            if (heading.Equals("Meta description", StringComparison.OrdinalIgnoreCase)
+                || heading.Equals("Meta Description", StringComparison.OrdinalIgnoreCase)
+                || heading.Equals("Title", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add(item);
+            }
+        }
+
+        return kept.Count == 0 ? null : string.Join('\n', kept);
+    }
+
+    private static bool MentionsMetaOrTitleHygiene(string notes) =>
+        notes.Contains("meta description", StringComparison.OrdinalIgnoreCase)
+        || notes.Contains("metaDescription", StringComparison.OrdinalIgnoreCase)
+        || (notes.Contains("title", StringComparison.OrdinalIgnoreCase)
+            && (notes.Contains("140", StringComparison.Ordinal)
+                || notes.Contains("160", StringComparison.Ordinal)
+                || notes.Contains("cutting-edge", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Splits reviewer notes into numbered items (lines starting with "N. ") preserving multi-line items.</summary>
+    private static IEnumerable<string> SplitNumberedNoteItems(string notes)
+    {
+        var lines = notes.Replace("\r\n", "\n").Split('\n');
+        var current = new StringBuilder();
+        foreach (var line in lines)
+        {
+            if (Regex.IsMatch(line, @"^\s*\d+\.\s+") && current.Length > 0)
+            {
+                yield return current.ToString().TrimEnd();
+                current.Clear();
+            }
+
+            if (current.Length > 0)
+            {
+                current.AppendLine();
+            }
+
+            current.Append(line);
+        }
+
+        if (current.Length > 0)
+        {
+            yield return current.ToString().TrimEnd();
+        }
+    }
+
     /// <summary>
     /// Renders the "REVISION REQUIRED" system-prompt addendum from a reviewer's revise notes, or
     /// null if there's nothing to append. When <paramref name="toolSlug"/> is supplied (tool-batch
@@ -827,29 +1127,21 @@ public class ContentPromptBuilder : IContentPromptBuilder
         return normalized.Length <= maxChars ? normalized : normalized[..maxChars].TrimEnd() + "…";
     }
 
-    private static string BuildToolsSectionGuidance(ProjectGenerationContext context)
+    private static string BuildToolsPlatformChildGuidance(ProjectGenerationContext context, string platformName)
     {
         return new StringBuilder()
-            .AppendLine("TOOLS SECTION REQUIREMENTS:")
+            .AppendLine("PLATFORM SUBSECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
-            .AppendLine("Cover 4-5 major platforms or tools relevant to the target keyword — only real, verifiable, well-known products. Never invent a tool name, vendor, feature, or capability; if unsure a feature exists, describe it generically instead of naming it.")
-            .AppendLine("Keep each platform's prose tight so the full section JSON can finish without truncation — prefer depth on 4 platforms over shallow coverage of 6.")
-            .AppendLine("For EACH platform, add a child Section (tag h3, heading = platform name) under this Tools section:")
-            .AppendLine("  - Its own paragraphs: a brief overview of what the platform does for this use case, then a list paragraph with 2-4 factual capability bullets.")
-            .AppendLine("  - One further child Section (tag h4, heading \"How an AI implementer helps with {Platform}\") nested under it.")
-            .AppendLine("  REQUIRED in that h4 child's paragraphs: cover all four of these mechanisms, each made concrete to THIS specific platform (not generic filler, not just Salesforce-flavored jargon reused for every platform):")
-            .AppendLine("    1. Accelerated deployment — what specifically shortens go-live for {Platform} (e.g. pre-built connectors, templated setup, phased rollout plan).")
-            .AppendLine("    2. Data model design — what {Platform}-specific data structure/mapping decisions an implementer gets right upfront (e.g. chart-of-accounts mapping, vendor master data, GL coding schema).")
-            .AppendLine("    3. Workflow/process configuration — what {Platform}-specific approval chains, routing rules, or automation logic get configured.")
-            .AppendLine("    4. Custom code/development — what {Platform}-specific extension mechanism exists if the platform supports one (its own scripting/API/SDK layer, e.g. custom connectors, API integrations, scripted validation rules); if {Platform} genuinely has no such layer, say so plainly instead of inventing one — don't force this point for a platform that's config-only.")
-            .AppendLine("  Keep each of the 4 points to ONE tight sentence — do not write a full paragraph per point or restate the platform overview/capability bullets above. ")
-            .AppendLine("  Write it as flowing prose (a single text paragraph) covering all four, not a numbered list — so it doesn't read as a mechanical template repeated per platform.")
-            .AppendLine("  Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation. Vary the language and sentence structure between platforms — do not reuse the same phrasing for each one.")
+            .AppendLine($"Platform: {platformName}")
+            .AppendLine("In the h4 child's paragraphs, cover all four of these mechanisms, each made concrete to THIS specific platform (not generic filler):")
+            .AppendLine($"  1. Accelerated deployment — what specifically shortens go-live for {platformName}.")
+            .AppendLine($"  2. Data model design — what {platformName}-specific data structure/mapping decisions an implementer gets right upfront.")
+            .AppendLine($"  3. Workflow/process configuration — what {platformName}-specific approval chains, routing rules, or automation logic get configured.")
+            .AppendLine($"  4. Custom code/development — what {platformName}-specific extension mechanism exists if the platform supports one; if it genuinely has no such layer, say so plainly instead of inventing one.")
+            .AppendLine("Keep each of the 4 points to ONE tight sentence — flowing prose in a single text paragraph, not a numbered list.")
+            .AppendLine("Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
-            .AppendLine($"Target {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words for this Tools section (longer than other sections).")
-            .AppendLine("Each platform h3 child should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
-            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
-                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+            .AppendLine("This h3 child should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
             .ToString();
     }
 

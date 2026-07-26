@@ -109,7 +109,15 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             "Generating pillar body for project {ProjectId} via {Provider} (regeneration={IsRegeneration}, faqCount={FaqCount})",
             projectId, provider.ProviderType, isRegeneration, faqQuestions.Count);
 
-        var (document, ledeType) = await GenerateArticleBodyAsync(provider, context, bodyMetadata, faqQuestions, isRegeneration, revisionNotes, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            bodyMetadata = await ApplyMetaRevisionNotesAsync(
+                provider, context, articleRow, bodyMetadata, revisionNotes, cancellationToken);
+        }
+
+        var existingLedeHeading = articleRow.Body?.Lede.Heading;
+        var (document, ledeType) = await GenerateArticleBodyAsync(
+            provider, context, bodyMetadata, faqQuestions, isRegeneration, revisionNotes, existingLedeHeading, cancellationToken);
         var wordCount = ContentDocumentText.CountWords(document);
 
         if (wordCount < ContentLengthTargets.PillarMinWords)
@@ -134,9 +142,9 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var now = DateTime.UtcNow;
         var articleMetadata = new ContentMetadata(
-            metadata.Title, metadata.MetaDescription, context.AuthorName, context.PublisherName,
-            context.PublisherLogoUrl, articleUrl, context.PublisherLogoUrl, now, now, metadata.Keywords, wordCount);
-        var softwareApplications = ToolSectionExtractor.ExtractApplications(document, metadata.SectionOutline);
+            bodyMetadata.Title, bodyMetadata.MetaDescription, context.AuthorName, context.PublisherName,
+            context.PublisherLogoUrl, articleUrl, context.PublisherLogoUrl, now, now, bodyMetadata.Keywords, wordCount);
+        var softwareApplications = ToolSectionExtractor.ExtractApplications(document, bodyMetadata.SectionOutline);
         articleRow.Body = document;
         articleRow.LedeType = ledeType;
         articleRow.WordCount = wordCount;
@@ -146,7 +154,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         articleRow.GeneratedByModel = ResolveModelName(project.PreferredProvider);
 
         var summaryVariants = await GenerateSummaryVariantsAsync(
-            provider, context, metadata.Title, document, metadata.MetaDescription, "pillar", cancellationToken);
+            provider, context, bodyMetadata.Title, document, bodyMetadata.MetaDescription, "pillar", cancellationToken);
         articleRow.Summary = summaryVariants.Summary;
         articleRow.MainSummary = summaryVariants.MainSummary;
         articleRow.HeroSummary = summaryVariants.HeroSummary;
@@ -741,11 +749,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         IReadOnlyList<string> faqQuestions,
         bool isRegeneration,
         string? revisionNotes,
+        string? existingLedeHeading,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Generating pillar lede");
         var ledeResult = await provider.CompleteAsync(
-            _promptBuilder.BuildArticleLedePrompt(context, metadata),
+            _promptBuilder.BuildArticleLedePrompt(context, metadata, revisionNotes, existingLedeHeading),
             cancellationToken);
         var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "TechnicalArticle lede");
 
@@ -762,17 +771,27 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 "Generating pillar section {Index}/{Total}: {Heading}",
                 i + 1, mainSections.Count, heading);
 
-            var sectionResult = await provider.CompleteAsync(
-                _promptBuilder.BuildArticleSectionPrompt(
-                    context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration, revisionNotes),
-                cancellationToken);
+            Section section;
+            if (PillarOutlineNormalizer.IsToolsSection(heading))
+            {
+                section = await GenerateToolsSectionAsync(
+                    provider, context, metadata, heading, isRegeneration, revisionNotes, cancellationToken);
+            }
+            else
+            {
+                var sectionResult = await provider.CompleteAsync(
+                    _promptBuilder.BuildArticleSectionPrompt(
+                        context, metadata, heading, i, mainSections.Count, metadata.SectionOutline, isRegeneration, revisionNotes),
+                    cancellationToken);
+                section = LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'");
+            }
 
-            sections.Add(LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'"));
+            sections.Add(section);
 
             var sectionMin = PillarOutlineNormalizer.IsToolsSection(heading)
                 ? (int)(ContentLengthTargets.PillarToolsSectionMinWords * 0.85)
                 : (int)(ContentLengthTargets.PillarSectionMinWords * 0.85);
-            var sectionWords = ContentDocumentText.CountWords(sections[^1]);
+            var sectionWords = ContentDocumentText.CountWords(section);
             if (sectionWords < sectionMin)
             {
                 _logger.LogWarning(
@@ -795,6 +814,70 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
 
         return (new ContentDocument(lede, sections), ledeType);
+    }
+
+    private async Task<Section> GenerateToolsSectionAsync(
+        IContentGenerationProvider provider,
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string toolsSectionHeading,
+        bool isRegeneration,
+        string? revisionNotes,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Generating Tools platform list for \"{Heading}\"", toolsSectionHeading);
+        var listResult = await provider.CompleteAsync(
+            _promptBuilder.BuildToolsPlatformListPrompt(
+                context, metadata, toolsSectionHeading, isRegeneration, revisionNotes),
+            cancellationToken);
+        var platforms = NormalizeToolsPlatformList(
+            ParseJson<ToolsPlatformListDraft>(listResult.Content, "TechnicalArticle Tools platform list").Platforms,
+            toolsSectionHeading);
+
+        var children = new List<Section>();
+        for (var i = 0; i < platforms.Count; i++)
+        {
+            var platformName = platforms[i];
+            _logger.LogInformation(
+                "Generating Tools platform {Index}/{Total}: {Platform}",
+                i + 1, platforms.Count, platformName);
+
+            var platformResult = await provider.CompleteAsync(
+                _promptBuilder.BuildToolsPlatformChildPrompt(
+                    context, metadata, toolsSectionHeading, platformName, platforms, i, platforms.Count,
+                    isRegeneration, revisionNotes),
+                cancellationToken);
+
+            var child = LlmResponseJsonParser.ParseSection(
+                platformResult.Content, "h3", $"TechnicalArticle Tools platform '{platformName}'");
+            // Keep extractor/slug matching stable even if the model paraphrases the heading.
+            children.Add(child with { Heading = platformName });
+        }
+
+        return new Section(
+            Tag: "h2",
+            Heading: toolsSectionHeading,
+            Paragraphs: [],
+            Href: null,
+            Children: children);
+    }
+
+    private static List<string> NormalizeToolsPlatformList(IReadOnlyList<string>? raw, string toolsSectionHeading)
+    {
+        var platforms = (raw ?? [])
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .ToList();
+
+        if (platforms.Count < 4)
+        {
+            throw new ContentGenerationException(
+                $"Tools section '{toolsSectionHeading}' platform list returned {platforms.Count} platforms; need 4–5 real products.");
+        }
+
+        return platforms;
     }
 
     private static ArticleMetadataDraft SanitizePlanMetadata(
@@ -980,6 +1063,36 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         return new SocialPostDraft(platform, text);
     }
 
+    private async Task<ArticleMetadataDraft> ApplyMetaRevisionNotesAsync(
+        IContentGenerationProvider provider,
+        ProjectGenerationContext context,
+        GeneratedContent articleRow,
+        ArticleMetadataDraft metadata,
+        string revisionNotes,
+        CancellationToken cancellationToken)
+    {
+        var request = _promptBuilder.BuildArticleMetaRevisionPrompt(
+            context, metadata.Title, metadata.MetaDescription, revisionNotes);
+        if (request is null)
+        {
+            return metadata;
+        }
+
+        _logger.LogInformation("Applying meta-description revision notes for project keyword \"{Keyword}\"", context.TargetKeyword);
+        var result = await provider.CompleteAsync(request, cancellationToken);
+        var revised = ParseJson<MetaRevisionDraft>(result.Content, "TechnicalArticle meta revision");
+
+        var title = string.IsNullOrWhiteSpace(revised.Title) ? metadata.Title : revised.Title.Trim();
+        var metaDescription = string.IsNullOrWhiteSpace(revised.MetaDescription)
+            ? metadata.MetaDescription
+            : revised.MetaDescription.Trim();
+
+        articleRow.Title = title;
+        articleRow.MetaDescription = metaDescription;
+
+        return metadata with { Title = title, MetaDescription = metaDescription };
+    }
+
     private async Task<SummaryVariantsDraft> GenerateSummaryVariantsAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
@@ -1008,6 +1121,10 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             throw;
         }
     }
+
+    private sealed record MetaRevisionDraft(string? Title, string? MetaDescription);
+
+    private sealed record ToolsPlatformListDraft(List<string>? Platforms);
 }
 
 public class CompanyProfileOptions

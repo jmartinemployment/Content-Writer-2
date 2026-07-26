@@ -34,7 +34,39 @@ public class RevisionNotesPromptTests
         request.Messages.First(m => m.Role == ChatRole.System).Content;
 
     [Fact]
-    public void BuildArticleSectionPrompt_tools_section_uses_8192_output_token_budget()
+    public void BuildToolsPlatformListPrompt_requests_four_to_five_platforms_with_modest_token_budget()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Top AI Tools for Tax"]);
+
+        var request = builder.BuildToolsPlatformListPrompt(
+            MakeContext(), metadata, "Top AI Tools for Tax", isRegeneration: false, revisionNotes: null);
+
+        Assert.Equal(512, request.MaxOutputTokens);
+        Assert.Contains("4-5 major platforms", SystemPrompt(request));
+        Assert.Contains("\"platforms\": string[]", SystemPrompt(request));
+    }
+
+    [Fact]
+    public void BuildToolsPlatformChildPrompt_uses_2048_budget_and_platform_guidance()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Top AI Tools for Tax"]);
+        var platforms = new[] { "Avalara", "Thomson Reuters", "Intuit", "Drake Software" };
+
+        var request = builder.BuildToolsPlatformChildPrompt(
+            MakeContext(), metadata, "Top AI Tools for Tax", "Avalara", platforms, 0, platforms.Length,
+            isRegeneration: false, revisionNotes: null);
+
+        Assert.Equal(2048, request.MaxOutputTokens);
+        var system = SystemPrompt(request);
+        Assert.Contains("tag is \"h3\"", system);
+        Assert.Contains("How an AI implementer helps with {Platform}", system);
+        Assert.Contains("Avalara", system);
+    }
+
+    [Fact]
+    public void BuildArticleSectionPrompt_no_longer_special_cases_tools_with_8192_budget()
     {
         var builder = new ContentPromptBuilder();
         var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Top AI Tools for Tax"]);
@@ -43,8 +75,68 @@ public class RevisionNotesPromptTests
             MakeContext(), metadata, "Top AI Tools for Tax", 0, 1, ["Top AI Tools for Tax"],
             isRegeneration: false, revisionNotes: null);
 
-        Assert.Equal(8192, request.MaxOutputTokens);
-        Assert.Contains("4-5 major platforms", SystemPrompt(request));
+        Assert.Equal(2048, request.MaxOutputTokens);
+        Assert.DoesNotContain("TOOLS SECTION REQUIREMENTS", SystemPrompt(request));
+    }
+
+    [Fact]
+    public void BuildArticleLedePrompt_with_notes_targeting_lede_includes_revision_block()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Section A", "People Also Ask"]);
+        var notes =
+            "1. [Section: \"Why invoice chaos costs more than software\"] Lead with the cost of manual matching.\n" +
+            "2. [Section: \"Section A\"] Add a labeled hypothetical outcome.\n" +
+            "3. [Section: \"Meta description\"] Shorten to under 160 characters.";
+
+        var request = builder.BuildArticleLedePrompt(
+            MakeContext(), metadata, notes, existingLedeHeading: "Why invoice chaos costs more than software");
+
+        var system = SystemPrompt(request);
+        Assert.Contains("REVISION REQUIRED", system);
+        Assert.Contains("Lead with the cost of manual matching", system);
+        Assert.DoesNotContain("labeled hypothetical outcome", system);
+        Assert.DoesNotContain("Shorten to under 160", system);
+    }
+
+    [Fact]
+    public void BuildArticleLedePrompt_includes_notes_whose_heading_is_not_in_section_outline()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Section A"]);
+        var notes = "1. [Section: \"A surprising cost most teams ignore\"] Reframe as a hook, not a summary.";
+
+        var request = builder.BuildArticleLedePrompt(MakeContext(), metadata, notes, existingLedeHeading: null);
+
+        Assert.Contains("REVISION REQUIRED", SystemPrompt(request));
+        Assert.Contains("Reframe as a hook", SystemPrompt(request));
+    }
+
+    [Fact]
+    public void BuildArticleMetaRevisionPrompt_returns_request_when_notes_mention_meta()
+    {
+        var builder = new ContentPromptBuilder();
+        var notes = "1. [Section: \"Meta description\"] Shorten to under 160 characters and remove \"cutting-edge.\"";
+
+        var request = builder.BuildArticleMetaRevisionPrompt(
+            MakeContext(), "Title", "A cutting-edge overview of invoice automation for mid-market teams that want results now and forevermore beyond limits.", notes);
+
+        Assert.NotNull(request);
+        var system = SystemPrompt(request!);
+        Assert.Contains("REVISION REQUIRED", system);
+        Assert.Contains("Shorten to under 160", system);
+        Assert.Contains("140-160 characters", system);
+    }
+
+    [Fact]
+    public void BuildArticleMetaRevisionPrompt_returns_null_when_notes_are_body_only()
+    {
+        var builder = new ContentPromptBuilder();
+        var notes = "1. [Section: \"Section A\"] Lead with the practitioner's pain point.";
+
+        var request = builder.BuildArticleMetaRevisionPrompt(MakeContext(), "Title", "Meta", notes);
+
+        Assert.Null(request);
     }
 
     [Fact]

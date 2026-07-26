@@ -28,16 +28,27 @@ The lede is a `Section` (the first element of `ContentDocument.Lede`) — not a 
 
 Treat the lede as a regular Section throughout the pipeline — same structure, same export rules, no special handling.
 
-# Pillar Tools section generation (known limitation)
+# Editorial rewrite
 
-Pillar body generation already calls the LLM **once per top-level H2**. The Tools H2 is an exception in workload, not in call count: that single call must return one nested JSON `Section` containing 4–5 platform `h3` children (each with paragraphs, a list, and an `h4` implementer subtree). Structured JSON overhead means even a ~700–900 word Tools section can exceed a modest `MaxOutputTokens` budget and truncate mid-JSON (invalid parse → Step 2 failure). The current mitigation is a higher token ceiling (`8192` for Tools vs `2048` for other pillar sections) plus tighter platform-count guidance — that is a ceiling fix, not a design fix.
+User-triggered "Rewrite with feedback" (`ReviewLoopService.RewriteFromLatestVerdictAsync`) passes extracted reviewer notes into pillar generation as follows:
 
-**Preferred long-term approach:** generate one platform (or one child subtree) per LLM call and assemble them under the Tools H2 — same fine-grained pattern as the rest of the pillar — so a high per-call token budget is no longer required for that step. Do not treat raising `MaxOutputTokens` further as the primary solution if this shape keeps growing.
+- **Body H2s / FAQ** — already scoped via `BuildRevisionNotesBlock` (`[Section: "…"]` self-filter).
+- **Lede** — `BuildArticleLedePrompt` receives notes tagged with the current lede heading, or section titles not in the body outline (lede-only). Meta/title and FAQ notes are excluded from the lede call.
+- **Meta description / title** — when notes target `[Section: "Meta description"]` or `Title`, `BuildArticleMetaRevisionPrompt` runs a small revise pass and updates the article row before body regen. Outline stays stable unless notes explicitly demand outline changes (PAA "remove section" should reframe FAQ guidance, not delete the FAQ H2).
+
+The editorial reviewer (`EditorialReviewService`) must not demand unverifiable inventions (exact fines, named real case studies, unsupported percentages). Prefer pain-first framing, labeled hypotheticals for specificity, and remove/replace invented-sounding absolutes — aligned with writer prompts.
+
+# Pillar Tools section generation
+
+Pillar body generation calls the LLM **once per top-level H2**, including Tools. The Tools H2 is assembled from:
+
+1. A lightweight platform-list call (4–5 real product names).
+2. One LLM call per platform returning that platform’s `h3` subtree (overview, capability list, implementer `h4`).
+3. Assembly under the Tools H2 — `ToolSectionExtractor` still finds `h3` platforms the same way.
+
+Do not collapse Tools back into a single mega-JSON call with a raised `MaxOutputTokens` ceiling; per-platform generation is the intended design.
 
 # Queued work (next session)
 
-See [plans/tomorrow-rewrite-and-tools.md](plans/tomorrow-rewrite-and-tools.md):
-
-1. **Editorial rewrite fidelity** — pass review notes into lede (+ meta when relevant); align reviewer rubric with no-invented-facts rules so rewrite → re-review is not a stuck loop.
-2. **Tools per-platform generation** — implement the preferred approach above (this section).
+See [plans/tomorrow-rewrite-and-tools.md](plans/tomorrow-rewrite-and-tools.md) — Priority 1 (editorial rewrite fidelity) and Priority 2 (Tools per-platform) are implemented. Remaining: end-to-end re-test after a single deploy, then pause deploys so in-memory projects aren’t wiped mid-run.
 
