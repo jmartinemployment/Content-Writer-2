@@ -201,7 +201,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine($"Detected site focus/topics: {context.DetectedFocus}.")
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
             .AppendLine(ArticleMetadataJsonContract)
@@ -232,6 +232,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write the opening lede for a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
@@ -313,6 +314,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write ONE section of a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
             .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
             .AppendLine("Respond with ONLY a single valid JSON Section object for this section — no markdown fences, no commentary, no other sections.")
@@ -438,6 +440,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write ONE platform subsection for the Tools H2 of a TechnicalArticle pillar — third person, expert, consultative.")
             .AppendLine("Respond with ONLY a single valid JSON Section object — no markdown fences, no commentary, no other platforms.")
             .AppendLine(SectionJsonContract)
@@ -492,6 +495,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write ONLY the \"People Also Ask\" FAQ section of a TechnicalArticle pillar.")
             .AppendLine("Respond with ONLY a single valid JSON Section object — no markdown fences, no commentary.")
             .AppendLine(SectionJsonContract)
@@ -535,7 +539,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
             .AppendLine(BlogMetadataJsonContract)
             .AppendLine("The blog title MUST be different from the pillar title — use a conversational hook, question, or numbered angle (e.g. \"3 Ways...\", \"Why...\"). Never copy the pillar title verbatim.")
@@ -562,7 +566,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write the opening lede for a schema.org BlogPosting deep-dive — conversational but substantive; first/second person allowed.")
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("2-3 paragraphs: hook, stakes, and who this is for.")
@@ -597,7 +601,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write ONE section of a schema.org BlogPosting deep-dive article — conversational but substantive; first/second person allowed.")
             .AppendLine($"Editorial standard ({ContentLengthTargets.BlogRangeLabel} words): {ContentLengthTargets.BlogEditorialDefinition}")
             .AppendLine("Respond with ONLY a single valid JSON Section object for this section — no markdown fences, no commentary, no other sections.")
@@ -649,7 +653,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write a deep-dive blog that teases the pillar — do NOT duplicate the pillar structure or reuse its H2 headings verbatim.")
             .AppendLine("Use fresh headings (5-6 top-level sections). Substantive paragraphs with examples; first/second person allowed.")
             .AppendLine($"Target at least {ContentLengthTargets.BlogMinWords:N0} words (aim for {ContentLengthTargets.BlogRangeLabel}). Do not stop early.")
@@ -701,6 +705,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
         var system = new StringBuilder()
             .AppendLine($"You write {platform} posts for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForSocialPlatform(platform))
             .AppendLine(styleGuidance)
             .AppendLine(lengthGuidance)
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences:")
@@ -741,7 +746,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Article summary: {sourceArticle.MetaDescription}")
             .AppendLine($"Pillar URL (for context only — do not put in JSON): {articleUrl}")
             .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForEmail())
             .ToString();
 
         return new ChatCompletionRequest(
@@ -789,7 +794,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Blog title: {sourceBlog.Title}")
             .AppendLine($"Blog URL: {blogUrl}")
             .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine(BrandTones.FormatForPrompt(context.DetectedTone))
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine()
             .AppendLine("Sections requiring image prompts:");
 
@@ -816,6 +821,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You are a senior technical writer for an IT consulting firm.")
+            .AppendLine(BrandTones.ForWebpages())
             .AppendLine($"Editorial standard: {ContentLengthTargets.ToolEditorialDefinition}")
             .AppendLine("Respond with ONLY the sections array for this tool overview page — no markdown fences, no commentary:")
             .AppendLine(SectionsArrayJsonContract)

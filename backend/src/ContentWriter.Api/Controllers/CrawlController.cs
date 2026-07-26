@@ -61,8 +61,6 @@ public class CrawlController : ControllerBase
         // prefer LLM-extracted topic phrases, falling back to the heuristic if the model call fails.
         var detectedFocus = await TryExtractFocusWithLlmAsync(project, result, cancellationToken) ?? result.DetectedFocus;
 
-        var brandToneId = BrandTones.MapFromDetected(result.DetectedTone);
-
         project.CrawledSite = new CrawledSite
         {
             ProjectId = project.Id,
@@ -71,7 +69,7 @@ public class CrawlController : ControllerBase
             JsonLdBlocks = result.JsonLdBlocks,
             Headings = result.Headings,
             Paragraphs = result.Paragraphs,
-            DetectedTone = brandToneId,
+            DetectedTone = result.DetectedTone,
             DetectedFocus = detectedFocus,
             PagesCrawled = result.PagesCrawled
         };
@@ -80,7 +78,7 @@ public class CrawlController : ControllerBase
         project.UpdatedAtUtc = DateTime.UtcNow;
 
         return Ok(new CrawlSummaryResponse(
-            result.SiteName, result.PagesCrawled, brandToneId, detectedFocus,
+            result.SiteName, result.PagesCrawled, result.DetectedTone, detectedFocus,
             result.Headings.Count, result.Paragraphs.Count, result.JsonLdBlocks.Count));
     }
 

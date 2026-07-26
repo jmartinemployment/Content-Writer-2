@@ -86,7 +86,11 @@ internal static class ResearchBriefBuilder
     private static void AppendCompactSiteContext(StringBuilder sb, ProjectGenerationContext context, bool includeJsonLd)
     {
         sb.AppendLine($"=== PROJECT SITE: {context.SiteName} ({context.ProjectUrl}) ===");
-        sb.AppendLine(ContentWriter.Application.Services.BrandTones.FormatForPrompt(context.DetectedTone));
+        sb.AppendLine(ContentWriter.Application.Services.BrandTones.ForWebpages());
+        if (!string.IsNullOrWhiteSpace(context.DetectedTone))
+        {
+            sb.AppendLine($"Site observation tone: {context.DetectedTone}");
+        }
         sb.AppendLine($"Site focus: {context.DetectedFocus}");
 
         if (context.CrawledHeadings.Count > 0)
