@@ -82,10 +82,7 @@ public class ProjectsController : ControllerBase
             return NotFound();
         }
 
-        var crawl = project.CrawledSite is null ? null : new CrawlSummaryResponse(
-            project.CrawledSite.SiteName, project.CrawledSite.PagesCrawled,
-            project.CrawledSite.DetectedTone, project.CrawledSite.DetectedFocus,
-            project.CrawledSite.Headings.Count, project.CrawledSite.Paragraphs.Count, project.CrawledSite.JsonLdBlocks.Count);
+        var crawl = project.CrawledSite is null ? null : ToCrawlSummary(project.CrawledSite);
 
         var keywordSources = project.KeywordSources.Select(k => new KeywordSourceResponse(
             k.Id, k.Category, k.OriginalFileName, k.ExtractedTitle,
@@ -105,6 +102,37 @@ public class ProjectsController : ControllerBase
             project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department, project.Status,
             project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet));
     }
+
+    [HttpPatch("{id:guid}/tone")]
+    public async Task<ActionResult<CrawlSummaryResponse>> UpdateTone(
+        Guid id, [FromBody] UpdateProjectToneRequest request, CancellationToken cancellationToken)
+    {
+        var project = await _projectStore.GetAsync(id, cancellationToken);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        if (project.CrawledSite is null)
+        {
+            return BadRequest("Crawl the project site before setting tone.");
+        }
+
+        if (!BrandTones.IsValid(request.ToneId))
+        {
+            return BadRequest($"ToneId must be one of: {string.Join(", ", BrandTones.All.Select(t => t.Id))}.");
+        }
+
+        project.CrawledSite.DetectedTone = request.ToneId.Trim().ToLowerInvariant();
+        project.UpdatedAtUtc = DateTime.UtcNow;
+
+        return Ok(ToCrawlSummary(project.CrawledSite));
+    }
+
+    private static CrawlSummaryResponse ToCrawlSummary(CrawledSite crawl) => new(
+        crawl.SiteName, crawl.PagesCrawled,
+        BrandTones.MapFromDetected(crawl.DetectedTone), crawl.DetectedFocus,
+        crawl.Headings.Count, crawl.Paragraphs.Count, crawl.JsonLdBlocks.Count);
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(
         project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department,

@@ -699,7 +699,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             TargetKeyword: project.TargetKeyword,
             Department: project.Department,
             SiteName: crawl.SiteName,
-            DetectedTone: crawl.DetectedTone,
+            DetectedTone: BrandTones.MapFromDetected(crawl.DetectedTone),
             DetectedFocus: crawl.DetectedFocus,
             CrawledHeadings: crawl.Headings,
             CrawledParagraphs: crawl.Paragraphs,

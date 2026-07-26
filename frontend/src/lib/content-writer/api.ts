@@ -121,6 +121,13 @@ export function crawlProject(projectId: string, maxPages = 50): Promise<CrawlSum
   });
 }
 
+export function updateProjectTone(projectId: string, toneId: string): Promise<CrawlSummary> {
+  return request<CrawlSummary>(`/api/projects/${projectId}/tone`, {
+    method: "PATCH",
+    body: JSON.stringify({ toneId }),
+  });
+}
+
 export function uploadKeywordSource(
   projectId: string,
   category: KeywordSourceCategory,

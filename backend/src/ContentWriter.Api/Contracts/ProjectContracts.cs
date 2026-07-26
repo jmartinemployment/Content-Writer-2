@@ -21,6 +21,8 @@ public record CrawlSummaryResponse(
     string SiteName, int PagesCrawled, string DetectedTone, string DetectedFocus,
     int HeadingCount, int ParagraphCount, int JsonLdBlockCount);
 
+public record UpdateProjectToneRequest(string ToneId);
+
 public record KeywordSourceResponse(
     Guid Id, KeywordSourceCategory Category, string OriginalFileName,
     string? ExtractedTitle, int HeadingCount, int ParagraphCount, int QuestionCount);
