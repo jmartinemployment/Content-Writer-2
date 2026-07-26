@@ -183,7 +183,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     }
 
     private const string ArticleMetadataJsonContract =
-        "{\"title\": string, \"metaDescription\": string (max 160 chars), \"keywords\": string[] (5-10 items), \"sectionOutline\": string[] (5-7 declarative H2 headings — exactly ONE tools section with a descriptive name like \"Top AI Tools for {topic}\" (never a bare \"Tools/Platforms\" label), plus final item: \"People Also Ask\")}";
+        "{\"title\": string, \"metaDescription\": string (140-160 characters, must include the target keyword naturally, no hype), \"keywords\": string[] (5-10 items), \"sectionOutline\": string[] (5-7 declarative H2 headings — exactly ONE tools section with a descriptive name like \"Top AI Tools for {topic}\" (never a bare \"Tools/Platforms\" label), plus final item: \"People Also Ask\")}";
 
     private const string SocialJsonContract =
         "{\"text\": string}";
@@ -207,6 +207,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(ArticleMetadataJsonContract)
             .AppendLine("GOOD sectionOutline example: [\"Overview of Enterprise AI\", \"Implementation Framework\", \"Top AI Platforms and Tools\", \"Measuring ROI\", \"People Also Ask\"]")
             .AppendLine("BAD sectionOutline example: [\"What is AI?\", \"How does it work?\"] — never use questions as main H2s.")
+            .AppendLine("Meta description MUST be 140-160 characters, include the target keyword naturally, and stay factual — no hype words like \"cutting-edge\".")
             .ToString();
 
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
@@ -214,7 +215,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             "Derive sectionOutline from keyword SERP and local pack headings (declarative topics like \"Benefits of X\", not questions). " +
             "REQUIRED: include exactly one tools H2 with a descriptive name (e.g. \"Top AI Tools for Sales Prospecting\") — platforms plus which problems an AI implementer solves. Never use a bare \"Tools/Platforms\" heading. " +
             "Title must NOT be a question and must NOT start with \"How\" — use a definitive statement (e.g. \"AI Prospecting and Lead Intelligence: Implementation Guide\"). " +
-            "Meta description: concise factual summary for B2B readers. " +
+            $"Meta description: 140-160 characters, include \"{context.TargetKeyword}\" naturally, concise factual summary for B2B readers, no hype. " +
             "End sectionOutline with exactly one FAQ section titled \"People Also Ask\" — PAA questions are answered there in the body step, not as main H2s. " +
             "Return title, metaDescription, keywords, and sectionOutline only (body is written separately).");
 
@@ -236,7 +237,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Write the opening lede for a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
-            .AppendLine("Do NOT start with \"How\" or a question. 2-3 paragraphs: context and thesis for the article.")
+            .AppendLine("Do NOT start with \"How\" or a question.")
+            .AppendLine("PAIN BEFORE SOLUTION (required): the first paragraph must open on the practitioner's pain with the manual / status-quo process ")
+            .AppendLine("for the target keyword (cost, delay, error, risk, wasted hours) — before naming AI or an intelligent solution.")
+            .AppendLine("Only after that pain is established, introduce how an AI-assisted approach changes the situation. 2-3 paragraphs total.")
             .AppendLine("Also write imagePrompt: a prompt for an image-generation model to illustrate this opening.")
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
             .AppendLine(LedeJsonContract)
@@ -310,6 +314,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
         var isBestPractices = PillarSectionClassifier.IsBestPracticesSection(sectionHeading);
         var isBenefits = PillarSectionClassifier.IsBenefitsSection(sectionHeading);
+        var isIntroduction = PillarSectionClassifier.IsIntroductionSection(sectionHeading);
+        var isImplementation = PillarSectionClassifier.IsImplementationSection(sectionHeading);
         var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
 
         var system = new StringBuilder()
@@ -321,6 +327,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine(SectionJsonContract)
             .AppendLine("This section's own tag is \"h2\". Do NOT write introductory paragraphs before it — the opening lede is generated separately.")
             .AppendLine("Include 2-3 h3 subsections nested in \"children\" with multiple text paragraphs, and at least one list paragraph where appropriate.")
+            .AppendLine("PROBLEM-FIRST OPENING (required): the first paragraph under this H2 must open on the practitioner problem this section addresses ")
+            .AppendLine("(cost, delay, error, risk, wasted effort). Technology and capability come after that pain is clear.")
+            .AppendLine("Do NOT open with \"AI enables…\", \"Intelligent X is…\", a product capability list, or a definition of the technology.")
             .AppendLine("Do not write this as a neutral textbook explainer of the general subject — every subsection should be framed through what an AI implementation " +
                 $"consultancy like {context.PublisherName} ({context.ImplementerPositioning}) actually does about the problem being discussed, not just background education on it. " +
                 "A reader should finish the section understanding a consultancy's specific angle on it, not just the general concept.")
@@ -333,9 +342,19 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
+        if (isIntroduction)
+        {
+            system += Environment.NewLine + BuildIntroductionSectionGuidance(context);
+        }
+
         if (isBenefits)
         {
             system += Environment.NewLine + BuildBenefitsSectionGuidance(context);
+        }
+
+        if (isImplementation)
+        {
+            system += Environment.NewLine + BuildImplementationSectionGuidance(context);
         }
 
         if (isBestPractices)
@@ -1159,6 +1178,32 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Tie these to outcomes: reduced time-to-value, fewer failed pilots, production-ready automation.")
             .AppendLine($"Write from the perspective of {context.PublisherName} as the implementer where natural — without hard-selling.")
             .AppendLine("This h3 child should describe a real software product suitable for schema.org SoftwareApplication JSON+LD.")
+            .ToString();
+    }
+
+    private static string BuildIntroductionSectionGuidance(ProjectGenerationContext context)
+    {
+        return new StringBuilder()
+            .AppendLine("INTRODUCTION / OVERVIEW SECTION REQUIREMENTS:")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine("Frame this section around the problems the approach solves for practitioners — not a textbook definition of the technology.")
+            .AppendLine("Open with the costs of the status-quo process (errors, delays, manual effort, compliance risk), then explain what intelligent / AI-assisted ")
+            .AppendLine($"compliance or automation changes. Tie the framing to what {context.PublisherName} helps clients address, without hard-selling.")
+            .AppendLine("Ban openings that define \"what AI is\" or tour features before naming a concrete business pain.")
+            .ToString();
+    }
+
+    private static string BuildImplementationSectionGuidance(ProjectGenerationContext context)
+    {
+        return new StringBuilder()
+            .AppendLine("IMPLEMENTATION SECTION REQUIREMENTS:")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine("Lead with the pain of DIY rollout, failed pilots, opaque vendor setup, or stalled go-lives — not a generic numbered \"steps to implement AI\" list.")
+            .AppendLine($"Emphasize the concrete work {context.PublisherName} does for clients on this topic, covering at least:")
+            .AppendLine("  - Data model design — what must be mapped correctly upfront for this use case")
+            .AppendLine("  - Workflow / process configuration — approval chains, routing, automation logic")
+            .AppendLine("  - Integration and change management — connecting systems and getting teams to adopt the new process")
+            .AppendLine("Make each point specific to the target keyword / article topic — not interchangeable implementer filler.")
             .ToString();
     }
 

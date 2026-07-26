@@ -53,6 +53,50 @@ internal static class PillarSectionClassifier
         return false;
     }
 
+    public static bool IsIntroductionSection(string sectionHeading)
+    {
+        var text = sectionHeading.Trim();
+        ReadOnlySpan<string> markers =
+        [
+            "introduction", "overview", "what is", "understanding", "getting started with"
+        ];
+
+        foreach (var marker in markers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsImplementationSection(string sectionHeading)
+    {
+        var text = sectionHeading.Trim();
+        // Avoid matching "how to succeed" best-practices headings — those use IsBestPracticesSection.
+        if (text.Contains("how to succeed", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<string> markers =
+        [
+            "implement", "implementation", "deploy", "deployment", "adoption", "getting started", "how to"
+        ];
+
+        foreach (var marker in markers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool IsFutureTrendsSection(string sectionHeading)
     {
         var text = sectionHeading.Trim();
