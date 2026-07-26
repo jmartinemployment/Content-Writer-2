@@ -140,6 +140,59 @@ public class RevisionNotesPromptTests
     }
 
     [Fact]
+    public void BuildArticleSectionPrompt_benefits_section_includes_operational_guidance()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Benefits of AI-Driven Tax Compliance"]);
+
+        var system = SystemPrompt(builder.BuildArticleSectionPrompt(
+            MakeContext(), metadata, "Benefits of AI-Driven Tax Compliance", 0, 1,
+            ["Benefits of AI-Driven Tax Compliance"], isRegeneration: false, revisionNotes: null));
+
+        Assert.Contains("BENEFITS SECTION REQUIREMENTS", system);
+        Assert.Contains("before→after operational change", system);
+        Assert.DoesNotContain("CONCRETENESS REVISION", system);
+    }
+
+    [Fact]
+    public void BuildArticleSectionPrompt_benefits_with_concreteness_notes_adds_amplifier()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Benefits of AI-Driven Tax Compliance"]);
+        var notes =
+            "1. [Section: \"Benefits of AI-Driven Tax Compliance\"] Provide more specific, concrete examples " +
+            "of how AI-driven tax compliance benefits organizations, rather than relying on generic claims.";
+
+        var system = SystemPrompt(builder.BuildArticleSectionPrompt(
+            MakeContext(), metadata, "Benefits of AI-Driven Tax Compliance", 0, 1,
+            ["Benefits of AI-Driven Tax Compliance"], isRegeneration: false, revisionNotes: notes));
+
+        Assert.Contains("BENEFITS SECTION REQUIREMENTS", system);
+        Assert.Contains("CONCRETENESS REVISION", system);
+        Assert.Contains("Do NOT rephrase the same claims with nicer adjectives", system);
+    }
+
+    [Fact]
+    public void BuildArticleSectionPrompt_concreteness_amplifier_only_when_notes_target_that_section()
+    {
+        var builder = new ContentPromptBuilder();
+        var metadata = new ArticleMetadataDraft("Title", "Meta", [], ["Introduction", "Benefits of AI-Driven Tax Compliance"]);
+        var notes =
+            "1. [Section: \"Benefits of AI-Driven Tax Compliance\"] Provide more specific, concrete examples.\n" +
+            "2. [Section: \"Introduction\"] Lead with pain.";
+
+        var intro = SystemPrompt(builder.BuildArticleSectionPrompt(
+            MakeContext(), metadata, "Introduction", 0, 2, metadata.SectionOutline,
+            isRegeneration: false, revisionNotes: notes));
+        var benefits = SystemPrompt(builder.BuildArticleSectionPrompt(
+            MakeContext(), metadata, "Benefits of AI-Driven Tax Compliance", 1, 2, metadata.SectionOutline,
+            isRegeneration: false, revisionNotes: notes));
+
+        Assert.DoesNotContain("CONCRETENESS REVISION", intro);
+        Assert.Contains("CONCRETENESS REVISION", benefits);
+    }
+
+    [Fact]
     public void BuildArticleSectionPrompt_with_no_revision_notes_omits_revision_block()
     {
         var builder = new ContentPromptBuilder();

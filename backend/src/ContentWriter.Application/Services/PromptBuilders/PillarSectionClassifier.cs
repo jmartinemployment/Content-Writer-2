@@ -37,6 +37,22 @@ internal static class PillarSectionClassifier
         return false;
     }
 
+    public static bool IsBenefitsSection(string sectionHeading)
+    {
+        var text = sectionHeading.Trim();
+        ReadOnlySpan<string> markers = ["benefit", "advantage", "value of", "roi", "return on"];
+
+        foreach (var marker in markers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool IsFutureTrendsSection(string sectionHeading)
     {
         var text = sectionHeading.Trim();

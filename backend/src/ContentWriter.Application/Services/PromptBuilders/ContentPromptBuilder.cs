@@ -308,6 +308,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
         var isBestPractices = PillarSectionClassifier.IsBestPracticesSection(sectionHeading);
+        var isBenefits = PillarSectionClassifier.IsBenefitsSection(sectionHeading);
         var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
 
         var system = new StringBuilder()
@@ -323,11 +324,17 @@ public class ContentPromptBuilder : IContentPromptBuilder
                 "A reader should finish the section understanding a consultancy's specific angle on it, not just the general concept.")
             .AppendLine("If a hypothetical scenario is used, keep it to 1-2 sentences woven naturally into the surrounding paragraph — not a bolt-on closing paragraph that repeats what was already said.")
             .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
-            .AppendLine("A hypothetical scenario may still use a concrete quantified outcome for punch (e.g. \"a 40% drop in processing time\"), ")
+            .AppendLine("A hypothetical scenario may still use a concrete operational outcome for punch (e.g. \"month-end close compressed from two weeks to three days\"), ")
             .AppendLine("but it MUST be explicitly labeled hypothetical/illustrative — e.g. \"a hypothetical mid-sized manufacturer\" or ")
-            .AppendLine("\"in a representative scenario\". Never phrase it as something that already happened to a real client.")
+            .AppendLine("\"in a representative scenario\". Never phrase it as something that already happened to a real client. ")
+            .AppendLine("Do not reuse a stock \"40% reduction\" (or similar) percentage across sections — vary outcomes and make them operationally specific.")
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
+
+        if (isBenefits)
+        {
+            system += Environment.NewLine + BuildBenefitsSectionGuidance(context);
+        }
 
         if (isBestPractices)
         {
@@ -348,6 +355,10 @@ public class ContentPromptBuilder : IContentPromptBuilder
         if (revisionBlock is not null)
         {
             system += Environment.NewLine + revisionBlock;
+            if (isBenefits || NotesAskForConcreteness(revisionNotes, sectionHeading))
+            {
+                system += Environment.NewLine + BuildConcretenessRevisionAmplifier();
+            }
         }
 
         var user = new StringBuilder()
@@ -825,7 +836,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"  4. Custom code/development — {app.Name}'s own extension mechanism if it has one (API, scripting, SDK); if it's config-only, say so rather than inventing one.")
             .AppendLine($"Frame these as {context.PublisherName} ({context.ImplementerPositioning}) closing the gap for a client — consultative, not a sales pitch.")
             .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
-                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+                "A quantified outcome is fine for narrative punch only if explicitly labeled hypothetical/illustrative — avoid recycling a stock 40% line.")
             .ToString();
 
         var revisionBlock = BuildRevisionNotesBlock(revisionNotes, toolSlug: toolSlug);
@@ -1145,6 +1156,79 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .ToString();
     }
 
+    private static string BuildBenefitsSectionGuidance(ProjectGenerationContext context)
+    {
+        return new StringBuilder()
+            .AppendLine("BENEFITS SECTION REQUIREMENTS:")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine("This section fails if it reads as polished marketing claims (\"streamlined\", \"enhanced efficiency\", \"competitive edge\") without ")
+            .AppendLine("naming what changes in day-to-day work. For EACH benefit, state a concrete before→after operational change: who does what differently, ")
+            .AppendLine("what error/delay/handoff disappears, or what decision becomes possible that was not before.")
+            .AppendLine($"Tie at least half of the benefits to what {context.PublisherName} actually configures or designs (data model, workflow, integration, ")
+            .AppendLine("change management) — not to abstract \"AI capabilities\".")
+            .AppendLine("Use at most ONE labeled hypothetical in the whole section. Make it operationally specific and unique to this section — ")
+            .AppendLine("never recycle a stock \"40% reduction for a mid-sized retailer/manufacturer\" line used elsewhere in the article.")
+            .AppendLine("List bullets must be operational outcomes (e.g. \"exemption certificates validated before filing, not after notice\") — not slogan phrases.")
+            .AppendLine("Ban filler: cutting-edge, paradigm shift, transformative potential, seamless transition, maximize ROI, unlock value.")
+            .ToString();
+    }
+
+    private static string BuildConcretenessRevisionAmplifier() =>
+        """
+        CONCRETENESS REVISION (mandatory for this pass):
+        The reviewer flagged generic claims. Do NOT rephrase the same claims with nicer adjectives.
+        Replace each generic benefit with a specific operational example: role or team, task that changes, and the failure mode avoided.
+        Prefer distinct before→after details over percentages. If you use one quantified hypothetical, label it clearly and do not reuse a stock 40% line.
+        """;
+
+    /// <summary>
+    /// True when revision notes that apply to <paramref name="sectionHeading"/> ask for concrete /
+    /// specific examples or call out generic claims.
+    /// </summary>
+    internal static bool NotesAskForConcreteness(string? revisionNotes, string sectionHeading)
+    {
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            return false;
+        }
+
+        var scoped = revisionNotes;
+        if (revisionNotes.Contains("[Section:", StringComparison.Ordinal))
+        {
+            var matching = new List<string>();
+            foreach (var item in SplitNumberedNoteItems(revisionNotes))
+            {
+                var match = SectionTagRegex.Match(item);
+                if (match.Success
+                    && match.Groups["heading"].Value.Trim().Equals(sectionHeading, StringComparison.OrdinalIgnoreCase))
+                {
+                    matching.Add(item);
+                }
+            }
+
+            if (matching.Count == 0)
+            {
+                return false;
+            }
+
+            scoped = string.Join('\n', matching);
+        }
+
+        ReadOnlySpan<string> markers =
+        [
+            "concrete", "specific", "generic", "example", "examples", "specificity", "vague", "measurable"
+        ];
+        foreach (var marker in markers)
+        {
+            if (scoped.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string BuildBestPracticesSectionGuidance(ProjectGenerationContext context)
     {
         return new StringBuilder()
@@ -1158,7 +1242,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("during discovery so config work doesn't get redone.\").")
             .AppendLine("Any tool or platform named here must be real and verifiable — never invent a feature or product to illustrate a practice.")
             .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
-                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+                "A quantified outcome is fine for narrative punch only if explicitly labeled hypothetical/illustrative — avoid recycling a stock 40% line.")
             .ToString();
     }
 
@@ -1172,7 +1256,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("data models or workflows to it, or guiding change management as teams adopt it. Keep it consultative, not a sales pitch.")
             .AppendLine("Only cite real, verifiable tools, vendors, or capabilities when discussing a trend — never invent one to make the trend concrete.")
             .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
-                "A quantified outcome (e.g. \"a 40% reduction\") is fine for narrative punch only if explicitly labeled hypothetical/illustrative.")
+                "A quantified outcome is fine for narrative punch only if explicitly labeled hypothetical/illustrative — avoid recycling a stock 40% line.")
             .ToString();
     }
 }
