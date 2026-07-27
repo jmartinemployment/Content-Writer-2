@@ -202,6 +202,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine(BrandTones.ForWebpages())
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
             .AppendLine($"Detected site focus/topics: {context.DetectedFocus}.")
             .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
             .AppendLine(ArticleMetadataJsonContract)
@@ -211,8 +212,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .ToString();
 
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
-            $"Plan a comprehensive pillar TechnicalArticle targeting the keyword \"{context.TargetKeyword}\" for {context.PublisherName}. " +
+            $"Plan a comprehensive pillar TechnicalArticle use case targeting the keyword \"{context.TargetKeyword}\" for {context.PublisherName}. " +
             "Derive sectionOutline from keyword SERP and local pack headings (declarative topics like \"Benefits of X\", not questions). " +
+            "Frame this as a use case showing how AI implementation services solve the client problem — not just generic background. " +
             "REQUIRED: include exactly one tools H2 with a descriptive name (e.g. \"Top AI Tools for Sales Prospecting\") — platforms plus which problems an AI implementer solves. Never use a bare \"Tools/Platforms\" heading. " +
             "Title must NOT be a question and must NOT start with \"How\" — use a definitive statement (e.g. \"AI Prospecting and Lead Intelligence: Implementation Guide\"). " +
             $"Meta description: 140-160 characters, include \"{context.TargetKeyword}\" naturally, concise factual summary for B2B readers, no hype. " +
@@ -235,6 +237,7 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine(BrandTones.ForWebpages())
             .AppendLine("Write the opening lede for a schema.org TechnicalArticle pillar — third person, expert, consultative, like a senior consultant advising a prospective client.")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
             .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
             .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
             .AppendLine("Do NOT start with \"How\" or a question.")
@@ -784,13 +787,13 @@ public class ContentPromptBuilder : IContentPromptBuilder
     {
         var system = new StringBuilder()
             .AppendLine("You write AI image-generation prompts for B2B article figures.")
-            .AppendLine("Return ONE prompt per listed item — the user pastes each into their image generator manually.")
+            .AppendLine("CRITICAL: Return EXACTLY ONE prompt for EACH listed section, in the exact order listed.")
             .AppendLine()
             .AppendLine("VISUAL STYLE:")
             .AppendLine("- Flat vector / infographic, professional fintech or B2B tech aesthetic.")
             .AppendLine($"- Default size: {ImagePromptDefaults.PillarWidth}x{ImagePromptDefaults.PillarHeight}. Style: {ImagePromptDefaults.PillarStylePreset}.")
             .AppendLine("- NO readable text, logos, or watermarks in the image.")
-            .AppendLine("- pillar-hero / blog-hero (exactly one each): the H1/title hero banner image for that piece — represents it as a whole, not any one section. Wider establishing-shot composition (not a diagram), evokes the title's theme and stakes at a glance. blog-hero should look distinct from pillar-hero even on the same topic — warmer/more approachable, matching the blog's conversational tone vs. the pillar's technical one.")
+            .AppendLine("- pillar-hero / blog-hero (ALWAYS required): the H1/title hero banner image — represents the entire piece at a glance. Wider establishing-shot composition (not a diagram), evokes the title's theme and stakes. blog-hero warmer/more approachable than pillar-hero.")
             .AppendLine("- Pillar H2 sections: teaching diagram, slightly more technical.")
             .AppendLine("- Blog sections: warmer step-by-step feel, still no readable text.")
             .AppendLine("- People Also Ask: abstract Q&A bubbles/shapes without words.")
@@ -802,9 +805,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("- alchemy: true, photoReal: false")
             .AppendLine("- notes: one short image-gen tip (negative prompt, no text, etc.)")
             .AppendLine()
-            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences:")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no preamble, no trailing text:")
             .AppendLine(ImagePromptSectionsJsonContract)
-            .AppendLine("Include every section listed below with matching sourceType, heading, and order.")
             .ToString();
 
         var user = new StringBuilder()
@@ -815,12 +817,15 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine(BrandTones.ForWebpages())
             .AppendLine()
-            .AppendLine("Sections requiring image prompts:");
+            .AppendLine("Sections requiring image prompts (DO NOT SKIP ANY):");
 
         foreach (var section in sections)
         {
             user.AppendLine($"- sourceType: {section.SourceType}, order: {section.Order}, heading: {section.Heading}");
         }
+
+        user.AppendLine()
+            .AppendLine("REQUIRED: All sections above must have a prompt in the JSON response.");
 
         return new ChatCompletionRequest(
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user.ToString()) },
