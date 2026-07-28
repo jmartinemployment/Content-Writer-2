@@ -132,6 +132,45 @@ public static class ContentDocumentText
         return document with { Lede = lede };
     }
 
+    /// <summary>For every section that has nested children (e.g. keyword h3 → h4 subtopics), appends a
+    /// code-authored "In this section" list of <c>#id</c> jump links to those children. Walks the
+    /// whole tree depth-first. Call <see cref="AssignSectionIds"/> first. Skips FAQ parents.</summary>
+    public static ContentDocument AppendChildSectionReferences(ContentDocument document) =>
+        document with
+        {
+            Lede = AppendChildRefsToSection(document.Lede),
+            Sections = document.Sections.Select(AppendChildRefsToSection).ToList(),
+        };
+
+    private static Section AppendChildRefsToSection(Section section)
+    {
+        var children = section.Children.Select(AppendChildRefsToSection).ToList();
+        var withChildren = section with { Children = children };
+
+        if (PillarOutlineNormalizer.IsFaqSectionTitle(withChildren.Heading))
+        {
+            return withChildren;
+        }
+
+        var linkable = children
+            .Where(c => !string.IsNullOrWhiteSpace(c.Heading) && !string.IsNullOrWhiteSpace(c.Id))
+            .ToList();
+
+        if (linkable.Count == 0)
+        {
+            return withChildren;
+        }
+
+        var leadIn = new TextParagraph([new Run("In this section:")]);
+        var listParagraph = new ListParagraph(
+            Ordered: false,
+            Items: linkable
+                .Select(c => (IReadOnlyList<Run>)[new Run(c.Heading, Href: $"#{c.Id}")])
+                .ToList());
+
+        return withChildren with { Paragraphs = [.. withChildren.Paragraphs, leadIn, listParagraph] };
+    }
+
     private static Section AssignSectionId(Section section, ISet<string> used)
     {
         string? id = null;

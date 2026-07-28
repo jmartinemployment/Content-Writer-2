@@ -138,6 +138,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
 
         document = ContentDocumentText.AssignSectionIds(document);
+        document = ContentDocumentText.AppendChildSectionReferences(document);
         document = ContentDocumentText.AppendSectionToc(document);
 
         var relatedPillarLinks = await FindRelatedPillarLinksAsync(project, context, provider, cancellationToken);
