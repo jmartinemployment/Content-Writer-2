@@ -67,6 +67,13 @@ public interface IContentPromptBuilder
         bool isRegeneration,
         string? revisionNotes = null);
 
+    /// <summary>Given this project's target keyword and a list of already-published sibling pillar
+    /// articles (same client, other projects), asks the LLM which ones are topically related enough
+    /// to justify a reader-facing link. The LLM only ever echoes back candidate titles verbatim —
+    /// it never sees or writes a URL.</summary>
+    ChatCompletionRequest BuildPillarRelevancePrompt(
+        ProjectGenerationContext context, IReadOnlyList<RelatedPillarCandidate> candidates);
+
     ChatCompletionRequest BuildBlogMetadataPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle);
 
     ChatCompletionRequest BuildBlogBodyPrompt(
@@ -443,6 +450,34 @@ public class ContentPromptBuilder : IContentPromptBuilder
             Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
             Temperature: isRegeneration ? 0.55 : 0.4,
             MaxOutputTokens: 512);
+    }
+
+    public ChatCompletionRequest BuildPillarRelevancePrompt(
+        ProjectGenerationContext context, IReadOnlyList<RelatedPillarCandidate> candidates)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content strategist deciding which existing articles from the same client are worth an internal link.")
+            .AppendLine("You will be given the target keyword for a new pillar article and a list of already-published sibling pillar articles from other projects for the same client.")
+            .AppendLine("Return ONLY the titles from the provided list that are topically related enough that a reader of one would genuinely benefit from a link to the other.")
+            .AppendLine("Do not invent titles. Only echo back titles exactly as given. Return an empty array if none are relevant.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine("{\"relatedTitles\": string[]}")
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"New pillar target keyword: {context.TargetKeyword}")
+            .AppendLine("Candidate sibling pillar articles:")
+            .ToString();
+
+        foreach (var candidate in candidates)
+        {
+            user += $"- {candidate.Title} (keyword: {candidate.TargetKeyword})" + Environment.NewLine;
+        }
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.2,
+            MaxOutputTokens: 256);
     }
 
     public ChatCompletionRequest BuildToolsPlatformChildPrompt(
