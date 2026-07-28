@@ -12,7 +12,7 @@ namespace ContentWriter.Application.Services.Export;
 public static class SectionHtmlRenderer
 {
     /// <summary>Builds a full standalone HTML document: doctype, head metadata (canonical, Open Graph,
-    /// Twitter card, JSON+LD, robots, viewport), H1 title, lede, sections.</summary>
+    /// Twitter card, JSON+LD, robots, viewport), optional Google Tag Manager, H1 title, lede, sections.</summary>
     public static string RenderDocument(
         string title,
         string? description,
@@ -21,7 +21,8 @@ public static class SectionHtmlRenderer
         string? ogImage,
         string? jsonLdSchema,
         IReadOnlyDictionary<string, string?> additionalMeta,
-        ContentDocument body)
+        ContentDocument body,
+        string? gtmContainerId = null)
     {
         var doc = new HtmlDocument();
         var html = doc.CreateElement("html");
@@ -69,8 +70,19 @@ public static class SectionHtmlRenderer
             }
         }
 
+        var normalizedGtmId = NormalizeGtmContainerId(gtmContainerId);
+        if (normalizedGtmId is not null)
+        {
+            AppendGtmHeadScript(doc, head, normalizedGtmId);
+        }
+
         var body_ = doc.CreateElement("body");
         html.AppendChild(body_);
+
+        if (normalizedGtmId is not null)
+        {
+            AppendGtmBodyNoscript(doc, body_, normalizedGtmId);
+        }
 
         var h1 = doc.CreateElement("h1");
         h1.AppendChild(CreateEncodedTextNode(doc, title));
@@ -251,4 +263,46 @@ public static class SectionHtmlRenderer
     /// HTML5. The `"` case is already safe from attribute-breakout either way; this closes the
     /// remaining conformance gap for every generated attribute value.</summary>
     private static string EncodeAttribute(string value) => System.Net.WebUtility.HtmlEncode(value);
+
+    /// <summary>Accepts only <c>GTM-…</c> container ids so a misconfigured value cannot become an
+    /// open redirect / script-src injection via the noscript iframe URL.</summary>
+    private static string? NormalizeGtmContainerId(string? gtmContainerId)
+    {
+        if (string.IsNullOrWhiteSpace(gtmContainerId))
+        {
+            return null;
+        }
+
+        var id = gtmContainerId.Trim().ToUpperInvariant();
+        return System.Text.RegularExpressions.Regex.IsMatch(id, @"^GTM-[A-Z0-9]+$") ? id : null;
+    }
+
+    private static void AppendGtmHeadScript(HtmlDocument doc, HtmlNode head, string gtmContainerId)
+    {
+        head.AppendChild(doc.CreateComment(" Google Tag Manager "));
+        var script = doc.CreateElement("script");
+        // Official GTM bootstrap — container id is regex-validated before this runs.
+        script.InnerHtml =
+            "(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':" +
+            "new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0]," +
+            "j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=" +
+            "'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);" +
+            $"}})(window,document,'script','dataLayer','{gtmContainerId}');";
+        head.AppendChild(script);
+        head.AppendChild(doc.CreateComment(" End Google Tag Manager "));
+    }
+
+    private static void AppendGtmBodyNoscript(HtmlDocument doc, HtmlNode body, string gtmContainerId)
+    {
+        body.AppendChild(doc.CreateComment(" Google Tag Manager (noscript) "));
+        var noscript = doc.CreateElement("noscript");
+        var iframe = doc.CreateElement("iframe");
+        iframe.SetAttributeValue("src", EncodeAttribute($"https://www.googletagmanager.com/ns.html?id={gtmContainerId}"));
+        iframe.SetAttributeValue("height", "0");
+        iframe.SetAttributeValue("width", "0");
+        iframe.SetAttributeValue("style", "display:none;visibility:hidden");
+        noscript.AppendChild(iframe);
+        body.AppendChild(noscript);
+        body.AppendChild(doc.CreateComment(" End Google Tag Manager (noscript) "));
+    }
 }

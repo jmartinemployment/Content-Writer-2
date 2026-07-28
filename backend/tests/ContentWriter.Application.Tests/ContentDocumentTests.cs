@@ -148,6 +148,41 @@ public class ContentDocumentTests
     }
 
     [Fact]
+    public void SectionHtmlRenderer_injects_gtm_head_script_and_body_noscript()
+    {
+        var lede = MakeSection("h2", "Lede", "body");
+        var document = new ContentDocument(lede, []);
+
+        var html = SectionHtmlRenderer.RenderDocument(
+            "Title", null, null, "article", null, null, new Dictionary<string, string?>(), document,
+            gtmContainerId: "GTM-K5CXSQRP");
+
+        Assert.Contains("googletagmanager.com/gtm.js?id=", html);
+        Assert.Contains("'GTM-K5CXSQRP'", html);
+        Assert.Contains("src=\"https://www.googletagmanager.com/ns.html?id=GTM-K5CXSQRP\"", html);
+        Assert.Contains("<noscript>", html);
+        // Noscript must be the first meaningful node inside <body>.
+        var bodyStart = html.IndexOf("<body>", StringComparison.Ordinal);
+        var noscript = html.IndexOf("<noscript>", StringComparison.Ordinal);
+        var h1 = html.IndexOf("<h1>", StringComparison.Ordinal);
+        Assert.True(bodyStart >= 0 && noscript > bodyStart && noscript < h1);
+    }
+
+    [Fact]
+    public void SectionHtmlRenderer_ignores_invalid_gtm_container_id()
+    {
+        var lede = MakeSection("h2", "Lede", "body");
+        var document = new ContentDocument(lede, []);
+
+        var html = SectionHtmlRenderer.RenderDocument(
+            "Title", null, null, "article", null, null, new Dictionary<string, string?>(), document,
+            gtmContainerId: "javascript:alert(1)");
+
+        Assert.DoesNotContain("googletagmanager.com", html);
+        Assert.DoesNotContain("<noscript>", html);
+    }
+
+    [Fact]
     public void AssignSectionIds_slugifies_headings_and_disambiguates_collisions()
     {
         var lede = MakeSection("h2", "Opening");

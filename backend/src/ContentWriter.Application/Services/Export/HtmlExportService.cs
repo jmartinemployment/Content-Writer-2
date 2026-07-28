@@ -118,7 +118,8 @@ public class HtmlExportService : IHtmlExportService
         // for social, email, and image-prompt rows, so RenderDocument's own guard skips the script
         // tag for those without needing a type check here too.
         var html = SectionHtmlRenderer.RenderDocument(
-            title, row.MetaDescription, canonicalUrl, ogType, _companyProfile.PublisherLogoUrl, row.JsonLdSchema, meta, body);
+            title, row.MetaDescription, canonicalUrl, ogType, _companyProfile.PublisherLogoUrl, row.JsonLdSchema, meta, body,
+            _companyProfile.GtmContainerId);
 
         return new ExportedHtmlDocument($"{folder}/{slug}.html", html);
     }

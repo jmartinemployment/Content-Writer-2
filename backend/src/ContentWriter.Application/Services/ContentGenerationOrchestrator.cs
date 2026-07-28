@@ -1207,6 +1207,10 @@ public class CompanyProfileOptions
     public string BlogBaseUrl { get; set; } = "https://www.geekatyourspot.com/blog";
     public string ToolBaseUrl { get; set; } = "https://www.geekatyourspot.com/tools";
 
+    /// <summary>Google Tag Manager container id (e.g. GTM-K5CXSQRP) injected into exported HTML
+    /// head + body noscript. Empty/invalid values skip GTM entirely.</summary>
+    public string GtmContainerId { get; set; } = "GTM-K5CXSQRP";
+
     /// <summary>How the publisher positions AI implementation services in pillar Tools sections.</summary>
     public string ImplementerPositioning { get; set; } =
         "Geek At Your Spot is an AI implementation consultancy for B2B organizations. " +
