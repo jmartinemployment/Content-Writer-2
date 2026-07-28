@@ -231,6 +231,12 @@ export interface GeneratedContentSet {
   coldOutreachEmail: ColdOutreachEmailDraft | null;
   imagePrompts: ImagePromptsSet | null;
   toolPosts: ToolPostDraft[] | null;
+  relatedPillarLinks: RelatedPillarLink[] | null;
+}
+
+export interface RelatedPillarLink {
+  title: string;
+  url: string;
 }
 
 export interface ReviewVerdict {

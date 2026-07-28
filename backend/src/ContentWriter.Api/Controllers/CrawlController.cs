@@ -35,7 +35,7 @@ public class CrawlController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<CrawlSummaryResponse>> CrawlProject(Guid projectId, [FromQuery] int maxPages = 50, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<CrawlSummaryResponse>> CrawlProject(Guid projectId, [FromQuery] int maxPages = int.MaxValue, CancellationToken cancellationToken = default)
     {
         var project = await _projectStore.GetAsync(projectId, cancellationToken);
         if (project is null)
