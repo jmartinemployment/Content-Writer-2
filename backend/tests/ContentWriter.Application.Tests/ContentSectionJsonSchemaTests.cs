@@ -30,6 +30,9 @@ public class ContentSectionJsonSchemaTests
         Assert.Contains("paragraphs", required);
         Assert.Contains("children", required);
         Assert.Contains("imagePrompt", required);
+        // Section.Id is code-assigned ([JsonIgnore]) — must not appear in the LLM schema.
+        Assert.DoesNotContain("id", required);
+        Assert.False(section.GetProperty("properties").TryGetProperty("id", out _));
     }
 
     [Fact]

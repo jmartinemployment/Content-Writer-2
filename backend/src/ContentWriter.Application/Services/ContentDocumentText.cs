@@ -1,3 +1,4 @@
+using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Domain.Entities;
 
 namespace ContentWriter.Application.Services;
@@ -63,6 +64,87 @@ public static class ContentDocumentText
         var lastIndex = sections.Count - 1;
         sections[lastIndex] = sections[lastIndex] with { Paragraphs = [.. sections[lastIndex].Paragraphs, ctaParagraph] };
         return document with { Sections = sections };
+    }
+
+    /// <summary>Appends a "Related reading" list of real, code-authored links (to sibling pillar
+    /// articles the LLM only ever named/echoed via title, never invented a URL for) to the last
+    /// top-level section, or the lede if there are no sections. No-op when <paramref name="links"/> is empty.</summary>
+    public static ContentDocument AppendRelatedPillarLinks(ContentDocument document, IReadOnlyList<RelatedPillarLink> links)
+    {
+        if (links.Count == 0)
+        {
+            return document;
+        }
+
+        var leadIn = new TextParagraph([new Run("Related reading:")]);
+        var listParagraph = new ListParagraph(
+            Ordered: false,
+            Items: links.Select(l => (IReadOnlyList<Run>)[new Run(l.Title, Href: l.Url)]).ToList());
+
+        if (document.Sections.Count == 0)
+        {
+            var lede = document.Lede with { Paragraphs = [.. document.Lede.Paragraphs, leadIn, listParagraph] };
+            return document with { Lede = lede };
+        }
+
+        var sections = document.Sections.ToList();
+        var lastIndex = sections.Count - 1;
+        sections[lastIndex] = sections[lastIndex] with { Paragraphs = [.. sections[lastIndex].Paragraphs, leadIn, listParagraph] };
+        return document with { Sections = sections };
+    }
+
+    /// <summary>Assigns stable, unique in-page <see cref="Section.Id"/> values (slugified headings)
+    /// across the whole tree so TOC / jump links can target them. Empty headings stay null.</summary>
+    public static ContentDocument AssignSectionIds(ContentDocument document)
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        return document with
+        {
+            Lede = AssignSectionId(document.Lede, used),
+            Sections = document.Sections.Select(s => AssignSectionId(s, used)).ToList(),
+        };
+    }
+
+    /// <summary>Appends a code-authored "In this article" TOC to the lede, linking to each top-level
+    /// section's <see cref="Section.Id"/>. Skips FAQ/PAA. No-op when there are no eligible sections.
+    /// Call <see cref="AssignSectionIds"/> first so hrefs match heading ids on export.</summary>
+    public static ContentDocument AppendSectionToc(ContentDocument document)
+    {
+        var tocEntries = document.Sections
+            .Where(s => !string.IsNullOrWhiteSpace(s.Heading)
+                        && !string.IsNullOrWhiteSpace(s.Id)
+                        && !PillarOutlineNormalizer.IsFaqSectionTitle(s.Heading))
+            .ToList();
+
+        if (tocEntries.Count == 0)
+        {
+            return document;
+        }
+
+        var leadIn = new TextParagraph([new Run("In this article:")]);
+        var listParagraph = new ListParagraph(
+            Ordered: false,
+            Items: tocEntries
+                .Select(s => (IReadOnlyList<Run>)[new Run(s.Heading, Href: $"#{s.Id}")])
+                .ToList());
+
+        var lede = document.Lede with { Paragraphs = [.. document.Lede.Paragraphs, leadIn, listParagraph] };
+        return document with { Lede = lede };
+    }
+
+    private static Section AssignSectionId(Section section, ISet<string> used)
+    {
+        string? id = null;
+        if (!string.IsNullOrWhiteSpace(section.Heading))
+        {
+            id = SlugHelper.EnsureUniqueSlug(SlugHelper.Slugify(section.Heading), used);
+        }
+
+        return section with
+        {
+            Id = id,
+            Children = section.Children.Select(c => AssignSectionId(c, used)).ToList(),
+        };
     }
 
     /// <summary>Builds the ordered list of section image-prompt targets from already-structured

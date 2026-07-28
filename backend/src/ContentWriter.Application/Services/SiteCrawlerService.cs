@@ -22,7 +22,7 @@ public class SiteCrawlerService : ISiteCrawlerService
         _logger = logger;
     }
 
-    public async Task<SiteCrawlResult> CrawlAsync(string startUrl, int maxPages = 50, CancellationToken cancellationToken = default)
+    public async Task<SiteCrawlResult> CrawlAsync(string startUrl, int maxPages = int.MaxValue, CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(startUrl, UriKind.Absolute, out var startUri))
         {
@@ -77,7 +77,7 @@ public class SiteCrawlerService : ISiteCrawlerService
 
             ExtractJsonLd(doc, jsonLdBlocks);
             ExtractHeadings(doc, headings);
-            ExtractParagraphs(doc, paragraphs);
+            ExtractBodyText(doc, paragraphs);
 
             if (pagesCrawled < maxPages)
             {
@@ -149,9 +149,9 @@ public class SiteCrawlerService : ISiteCrawlerService
         }
     }
 
-    private static void ExtractParagraphs(HtmlDocument doc, List<string> paragraphs)
+    private static void ExtractBodyText(HtmlDocument doc, List<string> paragraphs)
     {
-        var nodes = doc.DocumentNode.SelectNodes("//p");
+        var nodes = doc.DocumentNode.SelectNodes("//p | //li | //blockquote | //td | //th | //dd");
         if (nodes is null)
         {
             return;
@@ -159,7 +159,7 @@ public class SiteCrawlerService : ISiteCrawlerService
 
         foreach (var node in nodes)
         {
-            if (node.Ancestors().Any(a => a.Name is "nav" or "footer" or "script" or "style"))
+            if (node.Ancestors().Any(a => a.Name is "nav" or "footer" or "header" or "script" or "style"))
             {
                 continue;
             }

@@ -146,4 +146,62 @@ public class ContentDocumentTests
         Assert.Contains("content=\"Tax Compliance &amp; Regulations &quot;quoted&quot; &lt;tag&gt; value\"", html);
         Assert.DoesNotContain("content=\"Tax Compliance & Regulations", html);
     }
+
+    [Fact]
+    public void AssignSectionIds_slugifies_headings_and_disambiguates_collisions()
+    {
+        var lede = MakeSection("h2", "Opening");
+        var child = MakeSection("h3", "Overview");
+        var sections = new[]
+        {
+            new Section("h2", "Overview", [new TextParagraph([new Run("a")])], null, [child]),
+            MakeSection("h2", "Overview"),
+            MakeSection("h2", "People Also Ask"),
+        };
+        var document = ContentDocumentText.AssignSectionIds(new ContentDocument(lede, sections));
+
+        Assert.Equal("opening", document.Lede.Id);
+        Assert.Equal("overview", document.Sections[0].Id);
+        Assert.Equal("overview-2", document.Sections[0].Children[0].Id);
+        Assert.Equal("overview-3", document.Sections[1].Id);
+        Assert.Equal("people-also-ask", document.Sections[2].Id);
+    }
+
+    [Fact]
+    public void AppendSectionToc_adds_in_article_links_after_lede_skipping_faq()
+    {
+        var lede = MakeSection("h2", "Opening", "Hook paragraph.");
+        var sections = new[]
+        {
+            MakeSection("h2", "Implementation Framework", "body"),
+            MakeSection("h2", "People Also Ask", "faq"),
+        };
+        var document = ContentDocumentText.AppendSectionToc(
+            ContentDocumentText.AssignSectionIds(new ContentDocument(lede, sections)));
+
+        Assert.Equal(3, document.Lede.Paragraphs.Count);
+        var leadIn = Assert.IsType<TextParagraph>(document.Lede.Paragraphs[1]);
+        Assert.Equal("In this article:", leadIn.Runs[0].Text);
+
+        var toc = Assert.IsType<ListParagraph>(document.Lede.Paragraphs[2]);
+        Assert.Single(toc.Items);
+        Assert.Equal("Implementation Framework", toc.Items[0][0].Text);
+        Assert.Equal("#implementation-framework", toc.Items[0][0].Href);
+    }
+
+    [Fact]
+    public void SectionHtmlRenderer_emits_heading_id_attributes_and_toc_hrefs()
+    {
+        var lede = MakeSection("h2", "Opening", "Hook.");
+        var section = MakeSection("h2", "Main Section", "Detail.");
+        var document = ContentDocumentText.AppendSectionToc(
+            ContentDocumentText.AssignSectionIds(new ContentDocument(lede, [section])));
+
+        var html = SectionHtmlRenderer.RenderFragment(document);
+
+        Assert.Contains("id=\"opening\"", html);
+        Assert.Contains("id=\"main-section\"", html);
+        Assert.Contains("href=\"#main-section\"", html);
+        Assert.Contains("In this article:", html);
+    }
 }

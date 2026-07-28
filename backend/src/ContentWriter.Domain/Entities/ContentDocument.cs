@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ContentWriter.Domain.Entities;
 
 public enum LedeType
@@ -20,7 +22,11 @@ public sealed record Section(
     IReadOnlyList<Paragraph> Paragraphs,
     string? Href,
     IReadOnlyList<Section> Children,
-    string? ImagePrompt = null);
+    string? ImagePrompt = null,
+    /// <summary>In-page anchor id for jump links / TOC. Assigned in code after generation —
+    /// ignored by the LLM section JSON schema so the model never invents or omits it.</summary>
+    [property: JsonIgnore]
+    string? Id = null);
 
 /// <summary>
 /// A generated body: a lede section (opening hook, always tag "h2") followed by the body's

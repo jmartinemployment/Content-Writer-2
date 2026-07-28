@@ -157,6 +157,10 @@ public static class SectionHtmlRenderer
     private static void AppendSection(HtmlDocument doc, HtmlNode parent, Section section)
     {
         var headingTag = doc.CreateElement(section.Tag);
+        if (!string.IsNullOrWhiteSpace(section.Id))
+        {
+            headingTag.SetAttributeValue("id", EncodeAttribute(section.Id));
+        }
         if (!string.IsNullOrWhiteSpace(section.Href))
         {
             var anchor = doc.CreateElement("a");

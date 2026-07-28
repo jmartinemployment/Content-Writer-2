@@ -12,8 +12,9 @@ public record SiteCrawlResult(
 public interface ISiteCrawlerService
 {
     /// <summary>
-    /// Crawls the given project URL and up to <paramref name="maxPages"/> same-domain pages linked
-    /// from it, extracting JSON+LD, headings, and paragraph text to determine tone and focus.
+    /// Crawls the given project URL and every same-domain page discovered from it (sitemap + linked
+    /// pages, capped only by <paramref name="maxPages"/> as a safety valve), extracting JSON+LD,
+    /// headings, and body text (paragraphs, list items, blockquotes, table cells) to determine tone and focus.
     /// </summary>
-    Task<SiteCrawlResult> CrawlAsync(string startUrl, int maxPages = 50, CancellationToken cancellationToken = default);
+    Task<SiteCrawlResult> CrawlAsync(string startUrl, int maxPages = int.MaxValue, CancellationToken cancellationToken = default);
 }
