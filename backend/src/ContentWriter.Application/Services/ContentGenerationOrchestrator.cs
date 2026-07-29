@@ -140,14 +140,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         document = ContentDocumentText.AssignSectionIds(document);
         document = ContentDocumentText.AppendChildSectionReferences(document);
         document = ContentDocumentText.AppendSectionToc(document);
-
-        var relatedPillarLinks = await FindRelatedPillarLinksAsync(project, context, provider, cancellationToken);
-        if (relatedPillarLinks.Count > 0)
-        {
-            document = ContentDocumentText.AppendRelatedPillarLinks(document, relatedPillarLinks);
-        }
         wordCount = ContentDocumentText.CountWords(document);
-        articleRow.RelatedPillarLinks = relatedPillarLinks;
 
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
@@ -275,11 +268,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             Body = ContentDocumentText.AppendClosingLink(
                 blogDraft.Body, "Read the full technical guide for implementation depth", articleUrl),
         };
-
-        if (articleRow.RelatedPillarLinks is { Count: > 0 } relatedPillarLinks)
-        {
-            blog = blog with { Body = ContentDocumentText.AppendRelatedPillarLinks(blog.Body, relatedPillarLinks) };
-        }
 
         var now = DateTime.UtcNow;
         var blogMetadata = new ContentMetadata(
@@ -737,56 +725,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     private static string CombineUrl(string baseUrl, string department, string slug) =>
         $"{baseUrl.TrimEnd('/')}/{department}/{slug}";
 
-    /// <summary>Finds other projects under the same client that already have a generated pillar
-    /// article, then asks the LLM which of those are topically related enough to link to. Skips the
-    /// LLM call entirely when there are no candidates — no silent cost incurred for a no-op check.</summary>
-    private async Task<List<RelatedPillarLink>> FindRelatedPillarLinksAsync(
-        Project project, ProjectGenerationContext context, IContentGenerationProvider provider, CancellationToken cancellationToken)
-    {
-        var siblings = await _projectStore.ListAsync(
-            p => p.ClientId == project.ClientId && p.Id != project.Id, cancellationToken);
-
-        var candidates = siblings
-            .Select(sibling => (Project: sibling, Article: sibling.GeneratedContents
-                .FirstOrDefault(c => c.ContentType == GeneratedContentType.TechnicalArticle)))
-            .Where(x => x.Article?.Body is not null && x.Article.WordCount >= ContentLengthTargets.PillarMinWords)
-            .Select(x => new RelatedPillarCandidate(
-                x.Project.Id, x.Article!.Title, x.Project.TargetKeyword,
-                CombineUrl(context.ArticleBaseUrl, x.Project.Department, x.Article.Slug)))
-            .ToList();
-
-        if (candidates.Count == 0)
-        {
-            return [];
-        }
-
-        _logger.LogInformation(
-            "Checking {Count} sibling pillar(s) in client {ClientId} for relevance to \"{Keyword}\" (1 extra LLM call)",
-            candidates.Count, project.ClientId, context.TargetKeyword);
-
-        var result = await provider.CompleteAsync(
-            _promptBuilder.BuildPillarRelevancePrompt(context, candidates), cancellationToken);
-        var matchedTitles = ParseJson<RelatedPillarMatchDraft>(result.Content, "Related pillar relevance match").RelatedTitles ?? [];
-
-        var links = candidates
-            .Where(c => matchedTitles.Contains(c.Title, StringComparer.OrdinalIgnoreCase))
-            .Select(c => new RelatedPillarLink(c.Title, c.Url))
-            .ToList();
-
-        if (links.Count > 0)
-        {
-            _logger.LogInformation("Found {Count} related pillar(s) for project {ProjectId}: {Titles}",
-                links.Count, project.Id, string.Join(", ", links.Select(l => l.Title)));
-        }
-        else
-        {
-            _logger.LogInformation("No related pillars found for project {ProjectId} (checked {Count} candidate(s))",
-                project.Id, candidates.Count);
-        }
-
-        return links;
-    }
-
     private static string ResolveModelName(LlmProviderType provider) => provider switch
     {
         LlmProviderType.LmStudio => "lm-studio-local",
@@ -1192,8 +1130,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     private sealed record MetaRevisionDraft(string? Title, string? MetaDescription);
 
     private sealed record ToolsPlatformListDraft(List<string>? Platforms);
-
-    private sealed record RelatedPillarMatchDraft(List<string>? RelatedTitles);
 }
 
 public class CompanyProfileOptions

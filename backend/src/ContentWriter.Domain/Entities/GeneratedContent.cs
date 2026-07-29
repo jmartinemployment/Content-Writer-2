@@ -65,11 +65,6 @@ public class GeneratedContent
     /// <summary>For blog posts: the canonical URL/anchor of the TechnicalArticle it links back to.</summary>
     public string? RelatedArticleUrl { get; set; }
 
-    /// <summary>Sibling pillars (same Client, different Project) an LLM relevance check found topically
-    /// related enough to link to. Computed once during pillar body generation and reused (not
-    /// recomputed) when the blog is generated.</summary>
-    public List<RelatedPillarLink>? RelatedPillarLinks { get; set; }
-
     public LlmProviderType GeneratedByProvider { get; set; }
     public string GeneratedByModel { get; set; } = string.Empty;
 
@@ -77,5 +72,3 @@ public class GeneratedContent
 
     public List<ReviewVerdict> ReviewVerdicts { get; set; } = new();
 }
-
-public sealed record RelatedPillarLink(string Title, string Url);

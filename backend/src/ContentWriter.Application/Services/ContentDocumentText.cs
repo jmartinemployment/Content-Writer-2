@@ -66,33 +66,6 @@ public static class ContentDocumentText
         return document with { Sections = sections };
     }
 
-    /// <summary>Appends a "Related reading" list of real, code-authored links (to sibling pillar
-    /// articles the LLM only ever named/echoed via title, never invented a URL for) to the last
-    /// top-level section, or the lede if there are no sections. No-op when <paramref name="links"/> is empty.</summary>
-    public static ContentDocument AppendRelatedPillarLinks(ContentDocument document, IReadOnlyList<RelatedPillarLink> links)
-    {
-        if (links.Count == 0)
-        {
-            return document;
-        }
-
-        var leadIn = new TextParagraph([new Run("Related reading:")]);
-        var listParagraph = new ListParagraph(
-            Ordered: false,
-            Items: links.Select(l => (IReadOnlyList<Run>)[new Run(l.Title, Href: l.Url)]).ToList());
-
-        if (document.Sections.Count == 0)
-        {
-            var lede = document.Lede with { Paragraphs = [.. document.Lede.Paragraphs, leadIn, listParagraph] };
-            return document with { Lede = lede };
-        }
-
-        var sections = document.Sections.ToList();
-        var lastIndex = sections.Count - 1;
-        sections[lastIndex] = sections[lastIndex] with { Paragraphs = [.. sections[lastIndex].Paragraphs, leadIn, listParagraph] };
-        return document with { Sections = sections };
-    }
-
     /// <summary>Assigns stable, unique in-page <see cref="Section.Id"/> values (slugified headings)
     /// across the whole tree so TOC / jump links can target them. Empty headings stay null.</summary>
     public static ContentDocument AssignSectionIds(ContentDocument document)

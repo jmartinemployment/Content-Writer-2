@@ -97,7 +97,7 @@ export default function ContentResults({
         <StepRow
           step={2}
           title="Pillar body"
-          description={`${CONTENT_LENGTH_TARGETS.pillar.definition} Target ${CONTENT_LENGTH_TARGETS.pillar.label} words — one outline section per LLM call. Also checks sibling pillar articles in this client for related topics to link (one extra LLM call).`}
+          description={`${CONTENT_LENGTH_TARGETS.pillar.definition} Target ${CONTENT_LENGTH_TARGETS.pillar.label} words — one outline section per LLM call.`}
           done={hasPillarBody}
           disabled={!hasPillarPlan || isGenerating}
           isRunning={generatingStep === "pillar-body"}
@@ -105,13 +105,6 @@ export default function ContentResults({
           onClick={() => runStep("pillar-body", () => generatePillarBodyContent(projectId))}
           lockedMessage={!hasPillarPlan ? "Complete Step 1 first." : undefined}
         />
-        {result?.relatedPillarLinks && result.relatedPillarLinks.length > 0 && (
-          <p className="pl-8 text-xs text-muted">
-            Linked to {result.relatedPillarLinks.length} related pillar article
-            {result.relatedPillarLinks.length > 1 ? "s" : ""} in this client:{" "}
-            {result.relatedPillarLinks.map((l) => l.title).join(", ")}
-          </p>
-        )}
 
         <StepRow
           step={3}

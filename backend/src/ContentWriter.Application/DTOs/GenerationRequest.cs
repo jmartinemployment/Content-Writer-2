@@ -43,9 +43,6 @@ public record ArticleMetadataDraft(
     List<string> Keywords,
     List<string> SectionOutline);
 
-/// <summary>A sibling project's already-generated pillar article, offered as a linking candidate — not persisted.</summary>
-public record RelatedPillarCandidate(Guid ProjectId, string Title, string TargetKeyword, string Url);
-
 public record BlogMetadataDraft(
     string Title,
     string MetaDescription,
@@ -172,5 +169,4 @@ public record GeneratedContentSet(
     SocialPostDraft? LinkedInPost,
     ColdOutreachEmailContent? ColdOutreachEmail,
     ImagePromptsContent? ImagePrompts,
-    IReadOnlyList<ToolPostContent>? ToolPosts,
-    IReadOnlyList<RelatedPillarLink>? RelatedPillarLinks);
+    IReadOnlyList<ToolPostContent>? ToolPosts);
