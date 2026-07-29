@@ -203,86 +203,15 @@ public class ContentDocumentTests
     }
 
     [Fact]
-    public void AppendSectionToc_adds_in_article_links_after_lede_skipping_faq()
-    {
-        var lede = MakeSection("h2", "Opening", "Hook paragraph.");
-        var sections = new[]
-        {
-            MakeSection("h2", "Implementation Framework", "body"),
-            MakeSection("h2", "People Also Ask", "faq"),
-        };
-        var document = ContentDocumentText.AppendSectionToc(
-            ContentDocumentText.AssignSectionIds(new ContentDocument(lede, sections)));
-
-        Assert.Equal(3, document.Lede.Paragraphs.Count);
-        var leadIn = Assert.IsType<TextParagraph>(document.Lede.Paragraphs[1]);
-        Assert.Equal("In this article:", leadIn.Runs[0].Text);
-
-        var toc = Assert.IsType<ListParagraph>(document.Lede.Paragraphs[2]);
-        Assert.Single(toc.Items);
-        Assert.Equal("Implementation Framework", toc.Items[0][0].Text);
-        Assert.Equal("#implementation-framework", toc.Items[0][0].Href);
-    }
-
-    [Fact]
-    public void SectionHtmlRenderer_emits_heading_id_attributes_and_toc_hrefs()
+    public void SectionHtmlRenderer_emits_heading_id_attributes()
     {
         var lede = MakeSection("h2", "Opening", "Hook.");
         var section = MakeSection("h2", "Main Section", "Detail.");
-        var document = ContentDocumentText.AppendSectionToc(
-            ContentDocumentText.AssignSectionIds(new ContentDocument(lede, [section])));
+        var document = ContentDocumentText.AssignSectionIds(new ContentDocument(lede, [section]));
 
         var html = SectionHtmlRenderer.RenderFragment(document);
 
         Assert.Contains("id=\"opening\"", html);
         Assert.Contains("id=\"main-section\"", html);
-        Assert.Contains("href=\"#main-section\"", html);
-        Assert.Contains("In this article:", html);
-    }
-
-    [Fact]
-    public void AppendChildSectionReferences_links_h3_to_its_h4_children()
-    {
-        var h4 = MakeSection("h4", "AI Content Creation and Repurposing for Small Businesses", "detail");
-        var h3 = new Section(
-            "h3",
-            "AI Marketing Workflow",
-            [new TextParagraph([new Run("Intro to the workflow.")])],
-            null,
-            [h4]);
-        var h2 = new Section("h2", "Marketing Systems", [new TextParagraph([new Run("Section intro.")])], null, [h3]);
-        var document = ContentDocumentText.AppendChildSectionReferences(
-            ContentDocumentText.AssignSectionIds(new ContentDocument(MakeSection("h2", "Lede", "lede"), [h2])));
-
-        var workflow = document.Sections[0].Children[0];
-        Assert.Equal("AI Marketing Workflow", workflow.Heading);
-        Assert.Equal(3, workflow.Paragraphs.Count); // intro + "In this section:" + list
-        var leadIn = Assert.IsType<TextParagraph>(workflow.Paragraphs[1]);
-        Assert.Equal("In this section:", leadIn.Runs[0].Text);
-        var list = Assert.IsType<ListParagraph>(workflow.Paragraphs[2]);
-        Assert.Single(list.Items);
-        Assert.Equal("AI Content Creation and Repurposing for Small Businesses", list.Items[0][0].Text);
-        Assert.Equal("#ai-content-creation-and-repurposing-for-small-businesses", list.Items[0][0].Href);
-
-        // Parent H2 also references its H3 child.
-        var parentList = Assert.IsType<ListParagraph>(document.Sections[0].Paragraphs[^1]);
-        Assert.Equal("AI Marketing Workflow", parentList.Items[0][0].Text);
-        Assert.Equal("#ai-marketing-workflow", parentList.Items[0][0].Href);
-
-        var html = SectionHtmlRenderer.RenderFragment(document);
-        Assert.Contains("id=\"ai-marketing-workflow\"", html);
-        Assert.Contains("id=\"ai-content-creation-and-repurposing-for-small-businesses\"", html);
-        Assert.Contains("href=\"#ai-content-creation-and-repurposing-for-small-businesses\"", html);
-    }
-
-    [Fact]
-    public void AppendChildSectionReferences_skips_faq_parents()
-    {
-        var question = MakeSection("h3", "What is AI marketing?", "answer");
-        var faq = new Section("h2", "People Also Ask", [], null, [question]);
-        var document = ContentDocumentText.AppendChildSectionReferences(
-            ContentDocumentText.AssignSectionIds(new ContentDocument(MakeSection("h2", "Lede", "lede"), [faq])));
-
-        Assert.Empty(document.Sections[0].Paragraphs);
     }
 }

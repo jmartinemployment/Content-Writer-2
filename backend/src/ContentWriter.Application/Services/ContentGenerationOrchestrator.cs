@@ -138,9 +138,6 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
 
         document = ContentDocumentText.AssignSectionIds(document);
-        document = ContentDocumentText.AppendChildSectionReferences(document);
-        document = ContentDocumentText.AppendSectionToc(document);
-        wordCount = ContentDocumentText.CountWords(document);
 
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
