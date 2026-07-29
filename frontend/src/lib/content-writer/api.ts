@@ -115,6 +115,13 @@ export function getProject(projectId: string): Promise<ProjectDetail> {
   return request<ProjectDetail>(`/api/projects/${projectId}`);
 }
 
+export function updateProjectNotes(projectId: string, notes: string): Promise<ProjectDetail> {
+  return request<ProjectDetail>(`/api/projects/${projectId}/notes`, {
+    method: "PUT",
+    body: JSON.stringify({ notes }),
+  });
+}
+
 export function crawlProject(projectId: string, maxPages = 50): Promise<CrawlSummary> {
   return request<CrawlSummary>(`/api/projects/${projectId}/crawl?maxPages=${maxPages}`, {
     method: "POST",

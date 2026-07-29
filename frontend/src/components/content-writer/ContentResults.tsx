@@ -77,7 +77,7 @@ export default function ContentResults({
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-foreground">4. Generate Content</h2>
+      <h2 className="text-lg font-semibold text-foreground">5. Generate Content</h2>
       <p className="mt-1 text-sm text-muted">
         Run each step separately. Steps 1–2 plan and write the pillar article; steps 3–7 build blog, social, email, tool documents, and image prompts from it.
       </p>

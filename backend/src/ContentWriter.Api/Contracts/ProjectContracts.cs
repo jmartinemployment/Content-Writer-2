@@ -7,6 +7,8 @@ public record CreateProjectRequest(
     Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, string Department,
     LlmProviderType PreferredProvider, bool UseExactKeywordAsTitle = false);
 
+public record UpdateProjectNotesRequest(string? Notes);
+
 public record ProjectSummaryResponse(
     Guid Id, Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, string Department,
     ProjectStatus Status, LlmProviderType PreferredProvider, bool UseExactKeywordAsTitle, DateTime CreatedAtUtc);
@@ -15,7 +17,7 @@ public record ProjectDetailResponse(
     Guid Id, Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, string Department, ProjectStatus Status,
     LlmProviderType PreferredProvider, bool UseExactKeywordAsTitle, CrawlSummaryResponse? Crawl,
     List<KeywordSourceResponse> KeywordSources, List<GeneratedContentResponse> GeneratedContent,
-    GeneratedContentSet? ContentSet);
+    GeneratedContentSet? ContentSet, string? Notes);
 
 public record CrawlSummaryResponse(
     string SiteName, int PagesCrawled, string DetectedTone, string DetectedFocus,

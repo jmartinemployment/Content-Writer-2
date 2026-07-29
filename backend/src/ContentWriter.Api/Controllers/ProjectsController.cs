@@ -82,6 +82,27 @@ public class ProjectsController : ControllerBase
             return NotFound();
         }
 
+        return Ok(ToDetail(project));
+    }
+
+    [HttpPut("{id:guid}/notes")]
+    public async Task<ActionResult<ProjectDetailResponse>> UpdateNotes(
+        Guid id, [FromBody] UpdateProjectNotesRequest request, CancellationToken cancellationToken)
+    {
+        var project = await _projectStore.GetAsync(id, cancellationToken);
+        if (project is null)
+        {
+            return NotFound();
+        }
+
+        project.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        await _projectStore.SaveAsync(project, cancellationToken);
+
+        return Ok(ToDetail(project));
+    }
+
+    private ProjectDetailResponse ToDetail(Project project)
+    {
         var crawl = project.CrawledSite is null ? null : new CrawlSummaryResponse(
             project.CrawledSite.SiteName, project.CrawledSite.PagesCrawled,
             project.CrawledSite.DetectedTone, project.CrawledSite.DetectedFocus,
@@ -101,9 +122,9 @@ public class ProjectsController : ControllerBase
             : GeneratedContentSetAssembler.Assemble(
                 project, project.Department, _companyProfile.ArticleBaseUrl, _companyProfile.BlogBaseUrl, _companyProfile.ToolBaseUrl);
 
-        return Ok(new ProjectDetailResponse(
+        return new ProjectDetailResponse(
             project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department, project.Status,
-            project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet));
+            project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet, project.Notes);
     }
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(

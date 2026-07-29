@@ -26,7 +26,8 @@ public record ProjectGenerationContext(
     string ToolBaseUrl,
     string ImplementerPositioning,
     LlmProviderType Provider,
-    bool UseExactKeywordAsTitle = false);
+    bool UseExactKeywordAsTitle = false,
+    IReadOnlyList<string>? DesiredHeadings = null);
 
 public record TopicFocusResponse(string[]? Focus);
 

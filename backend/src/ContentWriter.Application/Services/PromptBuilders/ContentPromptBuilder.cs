@@ -211,11 +211,16 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Meta description MUST be 140-160 characters, include the target keyword naturally, and stay factual — no hype words like \"cutting-edge\".")
             .ToString();
 
+        var desiredHeadingsInstruction = context.DesiredHeadings is { Count: > 0 }
+            ? $"REQUIRED: sectionOutline MUST include one H2 for each of these client-requested topics, worded naturally but preserving the topic: {string.Join(", ", context.DesiredHeadings.Select(h => $"\"{h}\""))}. "
+            : string.Empty;
+
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
             $"Plan a comprehensive pillar TechnicalArticle use case targeting the keyword \"{context.TargetKeyword}\" for {context.PublisherName}. " +
             "Derive sectionOutline from keyword SERP and local pack headings (declarative topics like \"Benefits of X\", not questions). " +
             "Frame this as a use case showing how AI implementation services solve the client problem — not just generic background. " +
             "REQUIRED: include exactly one tools H2 with a descriptive name (e.g. \"Top AI Tools for Sales Prospecting\") — platforms plus which problems an AI implementer solves. Never use a bare \"Tools/Platforms\" heading. " +
+            desiredHeadingsInstruction +
             "Title must NOT be a question and must NOT start with \"How\" — use a definitive statement (e.g. \"AI Prospecting and Lead Intelligence: Implementation Guide\"). " +
             $"Meta description: 140-160 characters, include \"{context.TargetKeyword}\" naturally, concise factual summary for B2B readers, no hype. " +
             "End sectionOutline with exactly one FAQ section titled \"People Also Ask\" — PAA questions are answered there in the body step, not as main H2s. " +

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import CrawlPanel from "@/components/content-writer/CrawlPanel";
 import FileUploadPanel from "@/components/content-writer/FileUploadPanel";
+import NotesPanel from "@/components/content-writer/NotesPanel";
 import ContentResults from "@/components/content-writer/ContentResults";
 import ReviewPublishPanel from "@/components/content-writer/ReviewPublishPanel";
 import { getProject } from "@/lib/content-writer/api";
@@ -78,6 +79,8 @@ export default function ProjectPage() {
         <CrawlPanel projectId={project.id} projectUrl={project.projectUrl} crawl={crawl} onCrawled={setCrawl} />
 
         <FileUploadPanel projectId={project.id} keywordSources={keywordSources} onChanged={setKeywordSources} />
+
+        <NotesPanel projectId={project.id} notes={project.notes} onSaved={setProject} />
 
         <ContentResults
           projectId={project.id}

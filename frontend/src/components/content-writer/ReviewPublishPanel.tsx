@@ -161,7 +161,7 @@ export default function ReviewPublishPanel({
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-foreground">8. Editorial Review</h2>
+      <h2 className="text-lg font-semibold text-foreground">9. Editorial Review</h2>
       <p className="mt-1 text-sm text-muted">
         A different model reviews each selected row (invented-feature/fact check, brand-voice consistency) —
         single pass. At most <span className="font-medium text-foreground">one tool document</span> is reviewed

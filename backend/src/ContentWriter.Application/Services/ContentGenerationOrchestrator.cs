@@ -97,7 +97,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var metadata = ToMetadataDraft(articleRow);
-        var (bodyMetadata, faqQuestions) = PrepareBodyInput(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
+        var (bodyMetadata, faqQuestions) = PrepareBodyInput(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword, context.DesiredHeadings);
         if (!articleRow.SectionOutline.SequenceEqual(bodyMetadata.SectionOutline))
         {
             articleRow.SectionOutline = bodyMetadata.SectionOutline;
@@ -719,7 +719,10 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ToolBaseUrl: _companyProfile.ToolBaseUrl,
             ImplementerPositioning: _companyProfile.ImplementerPositioning,
             Provider: project.PreferredProvider,
-            UseExactKeywordAsTitle: project.UseExactKeywordAsTitle);
+            UseExactKeywordAsTitle: project.UseExactKeywordAsTitle,
+            DesiredHeadings: project.Notes
+                ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList() ?? []);
     }
 
     private static string CombineUrl(string baseUrl, string department, string slug) =>
@@ -742,7 +745,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             _promptBuilder.BuildArticleMetadataPrompt(context),
             cancellationToken);
         var metadata = NormalizeMetadata(ParseJson<ArticleMetadataDraft>(metadataResult.Content, "TechnicalArticle metadata"));
-        metadata = SanitizePlanMetadata(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
+        metadata = SanitizePlanMetadata(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword, context.DesiredHeadings);
         metadata = PillarPlanMetadataNormalizer.Normalize(metadata, context.TargetKeyword);
         return context.UseExactKeywordAsTitle ? metadata with { Title = context.TargetKeyword } : metadata;
     }
@@ -888,18 +891,20 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     private static ArticleMetadataDraft SanitizePlanMetadata(
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> paaQuestions,
-        string targetKeyword)
+        string targetKeyword,
+        IReadOnlyList<string>? desiredHeadings = null)
     {
-        var (mainOutline, _) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword);
+        var (mainOutline, _) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword, desiredHeadings);
         return metadata with { SectionOutline = mainOutline };
     }
 
     private static (ArticleMetadataDraft Metadata, List<string> FaqQuestions) PrepareBodyInput(
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> paaQuestions,
-        string targetKeyword)
+        string targetKeyword,
+        IReadOnlyList<string>? desiredHeadings = null)
     {
-        var (mainOutline, faqQuestions) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword);
+        var (mainOutline, faqQuestions) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword, desiredHeadings);
         return (metadata with { SectionOutline = mainOutline }, faqQuestions);
     }
 

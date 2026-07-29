@@ -104,6 +104,7 @@ export interface ProjectDetail extends ProjectSummary {
   keywordSources: KeywordSourceResponse[];
   generatedContent: GeneratedContentResponse[];
   contentSet: GeneratedContentSet | null;
+  notes: string | null;
 }
 
 export interface ArticleDraft {
