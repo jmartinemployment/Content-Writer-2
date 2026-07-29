@@ -60,6 +60,7 @@ public class CrawlController : ControllerBase
         // Word-frequency heuristic (result.DetectedFocus) is noisy on thin/marketing-heavy sites —
         // prefer LLM-extracted topic phrases, falling back to the heuristic if the model call fails.
         var detectedFocus = await TryExtractFocusWithLlmAsync(project, result, cancellationToken) ?? result.DetectedFocus;
+        var useCases = await TryExtractUseCasesWithLlmAsync(project, result, cancellationToken);
 
         project.CrawledSite = new CrawledSite
         {
@@ -71,6 +72,7 @@ public class CrawlController : ControllerBase
             Paragraphs = result.Paragraphs,
             DetectedTone = result.DetectedTone,
             DetectedFocus = detectedFocus,
+            UseCases = useCases,
             PagesCrawled = result.PagesCrawled
         };
 
@@ -117,5 +119,38 @@ public class CrawlController : ControllerBase
         }
 
         return null;
+    }
+
+    private async Task<List<UseCaseItem>> TryExtractUseCasesWithLlmAsync(Project project, SiteCrawlResult result, CancellationToken cancellationToken)
+    {
+        if (result.HomePageHeadings.Count == 0 && result.HomePageParagraphs.Count == 0)
+        {
+            return [];
+        }
+
+        var provider = _providerFactory.Get(project.PreferredProvider);
+        var prompt = _promptBuilder.BuildUseCaseExtractionPrompt(result.SiteName, result.HomePageHeadings, result.HomePageParagraphs);
+
+        try
+        {
+            var completion = await provider.CompleteAsync(prompt, cancellationToken);
+            var parsed = LlmResponseJsonParser.Parse<UseCaseExtractionResponse>(completion.Content, "Home page use-case extraction");
+            var items = (parsed.Items ?? [])
+                .Where(i => !string.IsNullOrWhiteSpace(i.Name))
+                .Select(i => new UseCaseItem(i.Category?.Trim() ?? string.Empty, i.Name.Trim(), i.Description?.Trim(), i.Href?.Trim()))
+                .ToList();
+
+            if (items.Count > 0)
+            {
+                _logger.LogInformation("Extracted {Count} Home page use-case item(s) for project {ProjectId}", items.Count, project.Id);
+            }
+
+            return items;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Home page use-case extraction failed for project {ProjectId} — continuing without it.", project.Id);
+            return [];
+        }
     }
 }

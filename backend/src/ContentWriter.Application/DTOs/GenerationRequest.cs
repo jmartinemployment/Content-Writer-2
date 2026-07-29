@@ -27,9 +27,14 @@ public record ProjectGenerationContext(
     string ImplementerPositioning,
     LlmProviderType Provider,
     bool UseExactKeywordAsTitle = false,
-    IReadOnlyList<string>? DesiredHeadings = null);
+    IReadOnlyList<string>? DesiredHeadings = null,
+    UseCaseItem? MatchedUseCase = null);
 
 public record TopicFocusResponse(string[]? Focus);
+
+public record UseCaseExtractionResponse(List<UseCaseItemDraft>? Items);
+
+public record UseCaseItemDraft(string Category, string Name, string? Description, string? Href);
 
 public record KeywordSourceSummary(
     KeywordSourceCategory Category,

@@ -7,7 +7,9 @@ public record SiteCrawlResult(
     List<string> Paragraphs,
     string DetectedTone,
     string DetectedFocus,
-    int PagesCrawled);
+    int PagesCrawled,
+    List<string> HomePageHeadings,
+    List<string> HomePageParagraphs);
 
 public interface ISiteCrawlerService
 {

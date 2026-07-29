@@ -37,6 +37,8 @@ public class SiteCrawlerService : ISiteCrawlerService
         var jsonLdBlocks = new List<string>();
         var headings = new List<string>();
         var paragraphs = new List<string>();
+        var homePageHeadings = new List<string>();
+        var homePageParagraphs = new List<string>();
         string siteName = startUri.Host;
         var pagesCrawled = 0;
 
@@ -79,6 +81,12 @@ public class SiteCrawlerService : ISiteCrawlerService
             ExtractHeadings(doc, headings);
             ExtractBodyText(doc, paragraphs);
 
+            if (pagesCrawled == 1)
+            {
+                ExtractHeadings(doc, homePageHeadings);
+                ExtractBodyText(doc, homePageParagraphs);
+            }
+
             if (pagesCrawled < maxPages)
             {
                 EnqueueInternalLinks(doc, startUri, current, toVisit, visited);
@@ -88,7 +96,7 @@ public class SiteCrawlerService : ISiteCrawlerService
         var tone = ToneFocusAnalyzer.DetectTone(paragraphs);
         var focus = ToneFocusAnalyzer.DetectFocus(headings, paragraphs);
 
-        return new SiteCrawlResult(siteName, jsonLdBlocks, headings, paragraphs, tone, focus, pagesCrawled);
+        return new SiteCrawlResult(siteName, jsonLdBlocks, headings, paragraphs, tone, focus, pagesCrawled, homePageHeadings, homePageParagraphs);
     }
 
     private async Task<HtmlDocument?> FetchAsync(Uri uri, CancellationToken cancellationToken)

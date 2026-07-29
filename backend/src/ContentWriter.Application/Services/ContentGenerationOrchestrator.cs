@@ -722,7 +722,31 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             UseExactKeywordAsTitle: project.UseExactKeywordAsTitle,
             DesiredHeadings: project.Notes
                 ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToList() ?? []);
+                .ToList() ?? [],
+            MatchedUseCase: MatchUseCase(crawl.UseCases, project.TargetKeyword));
+    }
+
+    /// <summary>Matches a project's TargetKeyword against a Home page use-case item by name — forgiving
+    /// match since the keyword is typically typed directly from that item's listed name. Exact match
+    /// first, then either-direction substring, so close but not identical wording still connects.</summary>
+    private static UseCaseItem? MatchUseCase(List<UseCaseItem> useCases, string targetKeyword)
+    {
+        if (useCases.Count == 0 || string.IsNullOrWhiteSpace(targetKeyword))
+        {
+            return null;
+        }
+
+        var keyword = targetKeyword.Trim();
+
+        var exact = useCases.FirstOrDefault(u => string.Equals(u.Name, keyword, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        return useCases.FirstOrDefault(u =>
+            u.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            keyword.Contains(u.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string CombineUrl(string baseUrl, string department, string slug) =>

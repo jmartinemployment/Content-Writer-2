@@ -18,6 +18,12 @@ public class CrawledSite
     public string DetectedTone { get; set; } = string.Empty;
     public string DetectedFocus { get; set; } = string.Empty;
 
+    /// <summary>Named items extracted from the Home page's own use-case/service listing (if any), used to
+    /// ground generation when a project's TargetKeyword matches one by name.</summary>
+    public List<UseCaseItem> UseCases { get; set; } = new();
+
     public int PagesCrawled { get; set; }
     public DateTime CrawledAtUtc { get; set; } = DateTime.UtcNow;
 }
+
+public sealed record UseCaseItem(string Category, string Name, string? Description, string? Href);

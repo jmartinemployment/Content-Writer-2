@@ -12,6 +12,11 @@ public interface IContentPromptBuilder
 {
     ChatCompletionRequest BuildTopicFocusPrompt(string siteName, IReadOnlyList<string> headings, IReadOnlyList<string> paragraphs);
 
+    /// <summary>Extracts named use-case/service items from the Home page's own crawled content (e.g. an
+    /// "Our Use Cases" listing), so a project's TargetKeyword can later be matched against a real,
+    /// already-published item name.</summary>
+    ChatCompletionRequest BuildUseCaseExtractionPrompt(string siteName, IReadOnlyList<string> homeHeadings, IReadOnlyList<string> homeParagraphs);
+
     ChatCompletionRequest BuildArticleMetadataPrompt(ProjectGenerationContext context);
 
     ChatCompletionRequest BuildArticleLedePrompt(
@@ -119,6 +124,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
     private const string TopicFocusJsonContract =
         "{\"focus\": string[] (4-8 short topic phrases, 1-4 words each, describing the site's real services/subject matter — no generic filler words)}";
 
+    private const string UseCaseExtractionJsonContract =
+        "{\"items\": [{\"category\": string, \"name\": string (the exact item name as shown on the page), \"description\": string|null (its own short description text, if present), \"href\": string|null (the exact relative or absolute link this item points to, or null if it has no dedicated link yet)}]}";
+
     /// <summary>
     /// The structured-output contract every section-body call uses instead of Markdown. No tag
     /// characters, no "##"/"###"/"- "/"[text](url)" syntax — headings are a plain string field,
@@ -182,6 +190,38 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 512);
     }
 
+    public ChatCompletionRequest BuildUseCaseExtractionPrompt(string siteName, IReadOnlyList<string> homeHeadings, IReadOnlyList<string> homeParagraphs)
+    {
+        var headingBlock = string.Join("\n", homeHeadings.Take(60).Select(h => $"- {h}"));
+        var paragraphBlock = string.Join("\n\n", homeParagraphs.Take(40).Select(p => p.Length > 300 ? p[..300] + "…" : p));
+
+        var system = new StringBuilder()
+            .AppendLine("You extract named use-case / service listing items from a business's Home page (crawled headings and body text only — no HTML markup or links are visible to you).")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
+            .AppendLine(UseCaseExtractionJsonContract)
+            .AppendLine("Only extract items from a genuine listing/showcase section (e.g. \"Our Use Cases\", \"Services\", \"What We Do\") where each item has its own distinct name — ")
+            .AppendLine("never invent items, and never extract generic nav/footer links or one-off mentions in prose.")
+            .AppendLine("Group items under the category heading they're actually listed under on the page (e.g. \"Accounting\", \"Customer Service\") — use the item's own immediate parent heading, not the page title.")
+            .AppendLine("You cannot see real links from crawled text alone — always return href as null.")
+            .AppendLine("Return an empty items array if the page has no such listing section.")
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Site name: {siteName}")
+            .AppendLine()
+            .AppendLine("Headings crawled from the Home page:")
+            .AppendLine(headingBlock)
+            .AppendLine()
+            .AppendLine("Body text excerpts crawled from the Home page:")
+            .AppendLine(paragraphBlock)
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.2,
+            MaxOutputTokens: 1024);
+    }
+
     private const string ArticleMetadataJsonContract =
         "{\"title\": string, \"metaDescription\": string (140-160 characters, must include the target keyword naturally, no hype), \"keywords\": string[] (5-10 items), \"sectionOutline\": string[] (5-7 declarative H2 headings — exactly ONE tools section with a descriptive name like \"Top AI Tools for {topic}\" (never a bare \"Tools/Platforms\" label), plus final item: \"People Also Ask\")}";
 
@@ -211,8 +251,15 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Meta description MUST be 140-160 characters, include the target keyword naturally, and stay factual — no hype words like \"cutting-edge\".")
             .ToString();
 
+        var matchedUseCaseInstruction = context.MatchedUseCase is { } matched
+            ? $"This keyword corresponds to \"{matched.Name}\" — an item already named on {context.PublisherName}'s own Home page under \"{matched.Category}\"" +
+              (string.IsNullOrWhiteSpace(matched.Description) ? "." : $", described there as: \"{matched.Description}\".") +
+              " Build sectionOutline so this pillar is demonstrably the page that Home page item was promising — align with that description rather than treating the keyword generically. "
+            : string.Empty;
+
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
             $"Plan a comprehensive pillar TechnicalArticle use case targeting the keyword \"{context.TargetKeyword}\" for {context.PublisherName}. " +
+            matchedUseCaseInstruction +
             "Derive sectionOutline from keyword SERP and local pack headings (declarative topics like \"Benefits of X\", not questions). " +
             "Frame this as a use case showing how AI implementation services solve the client problem — not just generic background. " +
             "REQUIRED: include exactly one tools H2 with a descriptive name (e.g. \"Top AI Tools for Sales Prospecting\") — platforms plus which problems an AI implementer solves. Never use a bare \"Tools/Platforms\" heading. " +
@@ -1198,6 +1245,13 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Open with the costs of the status-quo process (errors, delays, manual effort, compliance risk), then explain what intelligent / AI-assisted ")
             .AppendLine($"compliance or automation changes. Tie the framing to what {context.PublisherName} helps clients address, without hard-selling.")
             .AppendLine("Ban openings that define \"what AI is\" or tour features before naming a concrete business pain.");
+
+        if (context.MatchedUseCase is { } matched)
+        {
+            sb.AppendLine($"This article corresponds to \"{matched.Name}\", already named on {context.PublisherName}'s own Home page under \"{matched.Category}\"" +
+                (string.IsNullOrWhiteSpace(matched.Description) ? "." : $", described there as: \"{matched.Description}\".") +
+                " Make sure this introduction's framing is demonstrably continuous with that — a reader who saw it on the Home page should recognize this as the page it pointed to, not a different treatment of the same keyword.");
+        }
 
         if (context.DesiredHeadings is { Count: > 0 } desiredHeadings)
         {
