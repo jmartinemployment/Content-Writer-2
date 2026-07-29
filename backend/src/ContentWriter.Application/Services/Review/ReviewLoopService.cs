@@ -95,6 +95,9 @@ public sealed class ReviewLoopService : IReviewLoopService
             }
         }
 
+        // Persist the project after recording verdicts
+        await _projectStore.SaveAsync(project, cancellationToken);
+
         return verdicts;
     }
 

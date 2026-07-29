@@ -40,7 +40,7 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-await app.SeedContentWriterDefaultsAsync();
+await app.HydrateContentWriterAsync();
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5199";
 app.Run($"http://0.0.0.0:{port}");

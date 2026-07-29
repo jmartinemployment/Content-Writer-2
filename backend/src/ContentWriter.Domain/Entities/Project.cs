@@ -18,6 +18,9 @@ public class Project
     /// <summary>When true, skip LLM title generation for the pillar article and use TargetKeyword verbatim as the title.</summary>
     public bool UseExactKeywordAsTitle { get; set; }
 
+    /// <summary>Optional comma-separated desired headings that must appear in the pillar article outline.</summary>
+    public string? Notes { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 

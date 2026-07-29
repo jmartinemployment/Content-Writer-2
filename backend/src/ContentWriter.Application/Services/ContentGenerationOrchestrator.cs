@@ -643,11 +643,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
     }
 
-    private Task SaveProjectAsync(Project project, ProjectStatus status, CancellationToken cancellationToken)
+    private async Task SaveProjectAsync(Project project, ProjectStatus status, CancellationToken cancellationToken)
     {
         project.Status = status;
         project.UpdatedAtUtc = DateTime.UtcNow;
-        return Task.CompletedTask;
+        await _projectStore.SaveAsync(project, cancellationToken);
     }
 
     private GeneratedContentSet Assemble(Project project) =>

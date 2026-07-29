@@ -63,6 +63,7 @@ public class ClientsController : ControllerBase
         client.PublishTarget.ClientSecretEnvVar = request.ClientSecretEnvVar;
         client.PublishTarget.DefaultAuthorId = request.DefaultAuthorId;
         client.PublishTarget.CategoryStrategy = request.CategoryStrategy;
+        await _clientStore.SaveAsync(client, cancellationToken);
 
         return Ok(ToResponse(client));
     }

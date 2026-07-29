@@ -68,6 +68,7 @@ public class KeywordSourcesController : ControllerBase
         };
 
         project.KeywordSources.Add(entity);
+        await _projectStore.SaveAsync(project, cancellationToken);
 
         return Ok(new KeywordSourceResponse(
             entity.Id, entity.Category, entity.OriginalFileName, entity.ExtractedTitle,
@@ -85,6 +86,7 @@ public class KeywordSourcesController : ControllerBase
         }
 
         project.KeywordSources.Remove(target);
+        await _projectStore.SaveAsync(project, cancellationToken);
         return NoContent();
     }
 }

@@ -76,6 +76,7 @@ public class CrawlController : ControllerBase
 
         project.Status = ProjectStatus.ReadyForGeneration;
         project.UpdatedAtUtc = DateTime.UtcNow;
+        await _projectStore.SaveAsync(project, cancellationToken);
 
         return Ok(new CrawlSummaryResponse(
             result.SiteName, result.PagesCrawled, result.DetectedTone, detectedFocus,

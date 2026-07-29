@@ -6,17 +6,18 @@ namespace ContentWriter.Infrastructure.InMemory;
 
 /// <summary>
 /// Holds every Project (and its full object graph: CrawledSite, KeywordSources, GeneratedContents,
-/// ReviewVerdicts) for the lifetime of this process. No database, no persistence — content-writer-v2
-/// only durably saves output by committing .html files to the geekatyourspot GitHub repo
-/// (see GeekatyourspotCommitService). Everything here is gone on restart, by design.
+/// ReviewVerdicts) for the lifetime of this process.
 /// </summary>
 public interface IProjectStore
 {
-    /// <summary>Returns the live Project instance — callers mutate its navigation collections directly; there is no separate save step.</summary>
+    /// <summary>Returns the live Project instance — callers mutate its navigation collections directly.</summary>
     Task<Project?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<Project>> ListAsync(Func<Project, bool>? predicate = null, CancellationToken cancellationToken = default);
     Task AddAsync(Project project, CancellationToken cancellationToken = default);
     Task<List<Project>> GetRecentAsync(int take = 25, CancellationToken cancellationToken = default);
+
+    /// <summary>Persists an existing project (after mutation). Caller must ensure the project is already in the store.</summary>
+    Task SaveAsync(Project project, CancellationToken cancellationToken = default);
 
     /// <summary>Removes projects older than <paramref name="maxAge"/> that never reached Completed status.</summary>
     Task<int> PurgeStaleAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
@@ -40,6 +41,12 @@ public sealed class ProjectStore : IProjectStore
     public Task AddAsync(Project project, CancellationToken cancellationToken = default)
     {
         _projects[project.Id] = project;
+        return Task.CompletedTask;
+    }
+
+    public Task SaveAsync(Project project, CancellationToken cancellationToken = default)
+    {
+        // Base implementation: keep project in cache. Persistent stores override.
         return Task.CompletedTask;
     }
 

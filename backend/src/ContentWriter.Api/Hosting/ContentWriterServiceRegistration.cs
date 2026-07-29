@@ -7,6 +7,7 @@ using ContentWriter.Application.Services.Review;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
+using ContentWriter.Infrastructure;
 using ContentWriter.Infrastructure.InMemory;
 
 namespace ContentWriter.Api.Hosting;
@@ -17,11 +18,22 @@ public static class ContentWriterServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // No database. content-writer-v2 holds Project/Client state in memory for the process
-        // lifetime and durably saves output only by committing .html to the geekatyourspot GitHub
-        // repo (GeekatyourspotCommitService). State is gone on restart — that's expected.
-        services.AddSingleton<IProjectStore, ProjectStore>();
-        services.AddSingleton<IClientStore, ClientStore>();
+        // Persistence: write-through cache + filesystem adapter (swappable for GeekRepository later)
+        var dataDirectory = configuration["ContentWriter:DataDirectory"] ?? "./data";
+        services.AddSingleton<IPersistenceStore>(sp =>
+            new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>()));
+
+        // Project/Client stores with durable backing
+        services.AddSingleton<IProjectStore>(sp =>
+            new PersistentProjectStore(
+                sp.GetRequiredService<IPersistenceStore>(),
+                sp.GetRequiredService<IClientStore>(),
+                sp.GetRequiredService<ILogger<PersistentProjectStore>>()));
+
+        services.AddSingleton<IClientStore>(sp =>
+            new PersistentClientStore(
+                sp.GetRequiredService<IPersistenceStore>(),
+                sp.GetRequiredService<ILogger<PersistentClientStore>>()));
 
         services.Configure<LlmProvidersOptions>(configuration.GetSection(LlmProvidersOptions.SectionName));
         services.Configure<CompanyProfileOptions>(configuration.GetSection(CompanyProfileOptions.SectionName));
@@ -67,8 +79,8 @@ public static class ContentWriterServiceRegistration
         return services;
     }
 
-    /// <summary>Idempotent: seeds the "Geek At Your Spot" client into the in-memory store on first run only.</summary>
-    public static async Task SeedContentWriterDefaultsAsync(
+    /// <summary>Hydrates all persisted clients and projects from storage at startup.</summary>
+    public static async Task HydrateContentWriterAsync(
         this WebApplication app,
         CancellationToken cancellationToken = default)
     {
@@ -76,24 +88,40 @@ public static class ContentWriterServiceRegistration
 
         await using var scope = app.Services.CreateAsyncScope();
         var clientStore = scope.ServiceProvider.GetRequiredService<IClientStore>();
+        var projectStore = scope.ServiceProvider.GetRequiredService<IProjectStore>();
 
         const string DefaultClientName = "Geek At Your Spot";
 
-        if (await clientStore.AnyAsync(cancellationToken))
-            return;
-
-        var client = new Client { Name = DefaultClientName };
-        client.PublishTarget = new PublishTarget
+        // Hydrate persisted clients first
+        if (clientStore is PersistentClientStore persistentClientStore)
         {
-            ClientId = client.Id,
-            GeekBackendApiBaseUrl = "https://api.geekatyourspot.com",
-            OAuthTokenEndpoint = "api/oauth/token",
-            ClientIdEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_ID",
-            ClientSecretEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_SECRET",
-            CategoryStrategy = CategoryStrategy.DepartmentBased,
-        };
+            await persistentClientStore.HydrateAsync(cancellationToken);
+        }
 
-        await clientStore.AddAsync(client, cancellationToken);
-        logger.LogInformation("Seeded default client '{ClientName}' ({ClientId}).", DefaultClientName, client.Id);
+        // Then hydrate persisted projects (which rehydrate their Client refs)
+        if (projectStore is PersistentProjectStore persistentProjectStore)
+        {
+            await persistentProjectStore.HydrateAsync(cancellationToken);
+        }
+
+        // If no clients exist (fresh start), seed the default
+        if (!await clientStore.AnyAsync(cancellationToken))
+        {
+            var client = new Client { Name = DefaultClientName };
+            client.PublishTarget = new PublishTarget
+            {
+                ClientId = client.Id,
+                GeekBackendApiBaseUrl = "https://api.geekatyourspot.com",
+                OAuthTokenEndpoint = "api/oauth/token",
+                ClientIdEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_ID",
+                ClientSecretEnvVar = "GEEKATYOURSPOT_OAUTH_CLIENT_SECRET",
+                CategoryStrategy = CategoryStrategy.DepartmentBased,
+            };
+
+            await clientStore.AddAsync(client, cancellationToken);
+            logger.LogInformation("Seeded default client '{ClientName}' ({ClientId}).", DefaultClientName, client.Id);
+        }
+
+        logger.LogInformation("ContentWriter initialization complete.");
     }
 }
