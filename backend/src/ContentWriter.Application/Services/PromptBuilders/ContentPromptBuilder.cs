@@ -211,18 +211,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("Meta description MUST be 140-160 characters, include the target keyword naturally, and stay factual — no hype words like \"cutting-edge\".")
             .ToString();
 
-        var desiredHeadingsInstruction = context.DesiredHeadings is { Count: > 0 }
-            ? "REQUIRED: after building your own comprehensive sectionOutline per the instructions above, ADD one extra H2 for each of these client-requested topics on top of that plan (worded naturally but preserving the topic). " +
-              "Do NOT shrink, drop, or replace any of your own planned sections to make room for these — they are additions, not the whole outline: " +
-              $"{string.Join(", ", context.DesiredHeadings.Select(h => $"\"{h}\""))}. "
-            : string.Empty;
-
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
             $"Plan a comprehensive pillar TechnicalArticle use case targeting the keyword \"{context.TargetKeyword}\" for {context.PublisherName}. " +
             "Derive sectionOutline from keyword SERP and local pack headings (declarative topics like \"Benefits of X\", not questions). " +
             "Frame this as a use case showing how AI implementation services solve the client problem — not just generic background. " +
             "REQUIRED: include exactly one tools H2 with a descriptive name (e.g. \"Top AI Tools for Sales Prospecting\") — platforms plus which problems an AI implementer solves. Never use a bare \"Tools/Platforms\" heading. " +
-            desiredHeadingsInstruction +
             "Title must NOT be a question and must NOT start with \"How\" — use a definitive statement (e.g. \"AI Prospecting and Lead Intelligence: Implementation Guide\"). " +
             $"Meta description: 140-160 characters, include \"{context.TargetKeyword}\" naturally, concise factual summary for B2B readers, no hype. " +
             "End sectionOutline with exactly one FAQ section titled \"People Also Ask\" — PAA questions are answered there in the body step, not as main H2s. " +
@@ -1198,14 +1191,24 @@ public class ContentPromptBuilder : IContentPromptBuilder
 
     private static string BuildIntroductionSectionGuidance(ProjectGenerationContext context)
     {
-        return new StringBuilder()
+        var sb = new StringBuilder()
             .AppendLine("INTRODUCTION / OVERVIEW SECTION REQUIREMENTS:")
             .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
             .AppendLine("Frame this section around the problems the approach solves for practitioners — not a textbook definition of the technology.")
             .AppendLine("Open with the costs of the status-quo process (errors, delays, manual effort, compliance risk), then explain what intelligent / AI-assisted ")
             .AppendLine($"compliance or automation changes. Tie the framing to what {context.PublisherName} helps clients address, without hard-selling.")
-            .AppendLine("Ban openings that define \"what AI is\" or tour features before naming a concrete business pain.")
-            .ToString();
+            .AppendLine("Ban openings that define \"what AI is\" or tour features before naming a concrete business pain.");
+
+        if (context.DesiredHeadings is { Count: > 0 } desiredHeadings)
+        {
+            sb.AppendLine("REQUIRED SUBTOPICS: in addition to your own introduction content above, include one h3 child (with 1-3 h4 children each) for each of these " +
+                "client-requested subtopics — write each with the same depth/quality as any other h3, introducing what the reader will learn, since each will eventually " +
+                $"get its own dedicated article: {string.Join(", ", desiredHeadings.Select(h => $"\"{h}\""))}.")
+                .AppendLine("This section may run longer than the standard section word target to properly cover both your own introduction content and every " +
+                "required subtopic in full — do not shorten or drop either to fit the usual length.");
+        }
+
+        return sb.ToString();
     }
 
     private static string BuildImplementationSectionGuidance(ProjectGenerationContext context)

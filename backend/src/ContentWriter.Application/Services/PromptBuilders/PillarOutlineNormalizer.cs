@@ -12,10 +12,8 @@ public static class PillarOutlineNormalizer
     public static (List<string> MainOutline, List<string> FaqQuestions) Sanitize(
         IReadOnlyList<string> sectionOutline,
         IReadOnlyList<string> paaFromResearch,
-        string? targetKeyword = null,
-        IReadOnlyList<string>? requiredHeadings = null)
+        string? targetKeyword = null)
     {
-        var required = requiredHeadings ?? [];
         var main = new List<string>();
         var faqFromOutline = new List<string>();
 
@@ -32,11 +30,7 @@ public static class PillarOutlineNormalizer
                 continue;
             }
 
-            // Client-requested headings are always kept as main H2s, even question-shaped ones —
-            // "required" overrides the usual no-questions-as-H2s editorial rule.
-            var isRequired = required.Any(r => string.Equals(r, item, StringComparison.OrdinalIgnoreCase));
-
-            if (!isRequired && LooksLikeQuestion(item))
+            if (LooksLikeQuestion(item))
             {
                 faqFromOutline.Add(NormalizeQuestion(item));
             }
@@ -48,14 +42,6 @@ public static class PillarOutlineNormalizer
 
         main = DeduplicateToolsSections(main);
         EnsureToolsSection(main, targetKeyword);
-
-        foreach (var heading in required)
-        {
-            if (!main.Any(h => string.Equals(h, heading, StringComparison.OrdinalIgnoreCase)))
-            {
-                main.Add(heading);
-            }
-        }
 
         if (main.Count == 0)
         {

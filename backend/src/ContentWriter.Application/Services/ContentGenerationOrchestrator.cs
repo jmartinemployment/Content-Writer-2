@@ -97,7 +97,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var metadata = ToMetadataDraft(articleRow);
-        var (bodyMetadata, faqQuestions) = PrepareBodyInput(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword, context.DesiredHeadings);
+        var (bodyMetadata, faqQuestions) = PrepareBodyInput(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
         if (!articleRow.SectionOutline.SequenceEqual(bodyMetadata.SectionOutline))
         {
             articleRow.SectionOutline = bodyMetadata.SectionOutline;
@@ -745,7 +745,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             _promptBuilder.BuildArticleMetadataPrompt(context),
             cancellationToken);
         var metadata = NormalizeMetadata(ParseJson<ArticleMetadataDraft>(metadataResult.Content, "TechnicalArticle metadata"));
-        metadata = SanitizePlanMetadata(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword, context.DesiredHeadings);
+        metadata = SanitizePlanMetadata(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
         metadata = PillarPlanMetadataNormalizer.Normalize(metadata, context.TargetKeyword);
         return context.UseExactKeywordAsTitle ? metadata with { Title = context.TargetKeyword } : metadata;
     }
@@ -891,20 +891,18 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     private static ArticleMetadataDraft SanitizePlanMetadata(
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> paaQuestions,
-        string targetKeyword,
-        IReadOnlyList<string>? desiredHeadings = null)
+        string targetKeyword)
     {
-        var (mainOutline, _) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword, desiredHeadings);
+        var (mainOutline, _) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword);
         return metadata with { SectionOutline = mainOutline };
     }
 
     private static (ArticleMetadataDraft Metadata, List<string> FaqQuestions) PrepareBodyInput(
         ArticleMetadataDraft metadata,
         IReadOnlyList<string> paaQuestions,
-        string targetKeyword,
-        IReadOnlyList<string>? desiredHeadings = null)
+        string targetKeyword)
     {
-        var (mainOutline, faqQuestions) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword, desiredHeadings);
+        var (mainOutline, faqQuestions) = PillarOutlineNormalizer.Sanitize(metadata.SectionOutline, paaQuestions, targetKeyword);
         return (metadata with { SectionOutline = mainOutline }, faqQuestions);
     }
 
