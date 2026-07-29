@@ -14,18 +14,22 @@ namespace ContentWriter.Api.Hosting;
 
 public static class ContentWriterServiceRegistration
 {
+    /// <summary>
+    /// <paramref name="persistenceStoreFactory"/> lets a host that already owns a trusted
+    /// GeekRepository connection (i.e. GeekAPI, post-merge) supply an <see cref="IPersistenceStore"/>
+    /// backed by it, reusing that host's own credential — this project never constructs its own
+    /// GeekRepository client or holds that credential (see AGENTS.md "Persistence and target
+    /// architecture"). Defaults to the local filesystem when omitted (standalone/dev use).
+    /// </summary>
     public static IServiceCollection AddContentWriter(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Func<IServiceProvider, IPersistenceStore>? persistenceStoreFactory = null)
     {
-        // Persistence: write-through cache + filesystem backend (ephemeral on Railway — no volume
-        // attached; durable across local restarts). GeekRepository is NOT called directly from this
-        // service — see AGENTS.md "Persistence and target architecture": GeekRepository accepts
-        // calls only from GeekAPI, and this service is slated to merge into GeekAPI rather than grow
-        // its own copy of that credential.
         var dataDirectory = configuration["ContentWriter:DataDirectory"] ?? "./data";
         services.AddSingleton<IPersistenceStore>(sp =>
-            new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>()));
+            persistenceStoreFactory?.Invoke(sp)
+            ?? new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>()));
 
         // Project/Client stores with durable backing
         services.AddSingleton<IProjectStore>(sp =>
