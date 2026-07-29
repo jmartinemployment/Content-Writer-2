@@ -212,7 +212,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .ToString();
 
         var desiredHeadingsInstruction = context.DesiredHeadings is { Count: > 0 }
-            ? $"REQUIRED: sectionOutline MUST include one H2 for each of these client-requested topics, worded naturally but preserving the topic: {string.Join(", ", context.DesiredHeadings.Select(h => $"\"{h}\""))}. "
+            ? "REQUIRED: after building your own comprehensive sectionOutline per the instructions above, ADD one extra H2 for each of these client-requested topics on top of that plan (worded naturally but preserving the topic). " +
+              "Do NOT shrink, drop, or replace any of your own planned sections to make room for these — they are additions, not the whole outline: " +
+              $"{string.Join(", ", context.DesiredHeadings.Select(h => $"\"{h}\""))}. "
             : string.Empty;
 
         var user = ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleMetadata,
