@@ -44,3 +44,18 @@ next-env.d.ts
 # .NET
 bin/
 obj/
+
+# ── AI assistants / agents (local only — never commit) ─────────────────────
+# Matches GeekBackend's convention — see GeekBackend/.gitignore for the rationale.
+# Claude Code
+.claude/
+.claude/**
+.claudeignore
+CLAUDE.md
+CLAUDE.local.md
+CLAUDE.*.md
+
+# Generic agent instruction files (use README.md / CONTRIBUTING.md / Architecture.md instead)
+AGENTS.md
+AGENTS.local.md
+**/AGENTS.md
