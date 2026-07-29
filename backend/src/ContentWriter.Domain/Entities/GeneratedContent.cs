@@ -65,6 +65,16 @@ public class GeneratedContent
     /// <summary>For blog posts: the canonical URL/anchor of the TechnicalArticle it links back to.</summary>
     public string? RelatedArticleUrl { get; set; }
 
+    /// <summary>Set when generation ran with no crawled site content, no uploaded keyword sources,
+    /// and no matched Home-page Use Case — i.e. nothing but the bare keyword to write from. A soft
+    /// advisory, not a block: an operator may legitimately know the topic well enough to skip research.</summary>
+    public string? NoResearchWarning { get; set; }
+
+    /// <summary>Notes topics / matched Use Case name that were required but did not end up as a
+    /// heading anywhere in the generated body — surfaced so a miss is visible to the operator, not
+    /// just logged. Empty when everything requested was covered (or nothing was requested).</summary>
+    public List<string> Gaps { get; set; } = new();
+
     public LlmProviderType GeneratedByProvider { get; set; }
     public string GeneratedByModel { get; set; } = string.Empty;
 

@@ -43,7 +43,9 @@ public static class GeneratedContentSetAssembler
                     coldOutreachRow.MetaDescription ?? string.Empty,
                     coldOutreachRow.RelatedArticleUrl ?? articleUrl ?? string.Empty),
             ImagePrompts: BuildImagePrompts(project),
-            ToolPosts: BuildToolPosts(project, department, toolBaseUrl));
+            ToolPosts: BuildToolPosts(project, department, toolBaseUrl),
+            ArticleNoResearchWarning: articleRow?.NoResearchWarning,
+            ArticleGaps: articleRow?.Gaps);
     }
 
     private static IReadOnlyList<ToolPostContent>? BuildToolPosts(Project project, string department, string toolBaseUrl)

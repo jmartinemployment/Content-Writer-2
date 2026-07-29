@@ -18,10 +18,24 @@ public static class ContentWriterServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Persistence: write-through cache + filesystem adapter (swappable for GeekRepository later)
-        var dataDirectory = configuration["ContentWriter:DataDirectory"] ?? "./data";
+        // Persistence: write-through cache + a swappable durable backend.
+        // GeekRepository (Postgres-backed, survives redeploys) when REPO_API_KEY is configured;
+        // otherwise falls back to the local filesystem (ephemeral on Railway — dev/local only).
+        services.AddHttpClient("GeekRepository");
+        var repoApiKey = Environment.GetEnvironmentVariable("REPO_API_KEY");
+        var repoBaseUrl = configuration["ContentWriter:GeekRepositoryBaseUrl"] ?? "https://geekrepository-production.up.railway.app";
         services.AddSingleton<IPersistenceStore>(sp =>
-            new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>()));
+        {
+            if (!string.IsNullOrWhiteSpace(repoApiKey))
+            {
+                return new GeekRepositoryPersistenceStore(
+                    sp.GetRequiredService<IHttpClientFactory>(), repoBaseUrl, repoApiKey,
+                    sp.GetRequiredService<ILogger<GeekRepositoryPersistenceStore>>());
+            }
+
+            var dataDirectory = configuration["ContentWriter:DataDirectory"] ?? "./data";
+            return new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>());
+        });
 
         // Project/Client stores with durable backing
         services.AddSingleton<IProjectStore>(sp =>

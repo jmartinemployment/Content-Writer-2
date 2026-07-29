@@ -115,7 +115,7 @@ public class ProjectsController : ControllerBase
         var generatedContent = project.GeneratedContents.Select(g => new GeneratedContentResponse(
             g.Id, g.ContentType, g.Title, g.Slug, g.MetaDescription, g.Keywords, g.WordCount,
             g.Body is null ? string.Empty : SectionHtmlRenderer.RenderFragment(g.Body),
-            g.JsonLdSchema, g.RelatedArticleUrl, g.CreatedAtUtc)).ToList();
+            g.JsonLdSchema, g.RelatedArticleUrl, g.CreatedAtUtc, g.NoResearchWarning, g.Gaps)).ToList();
 
         var contentSet = project.GeneratedContents.Count == 0
             ? null

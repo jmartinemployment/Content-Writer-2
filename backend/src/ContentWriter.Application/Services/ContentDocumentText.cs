@@ -46,6 +46,39 @@ public static class ContentDocumentText
     public static Section? FindTopLevelSection(ContentDocument document, string heading) =>
         document.Sections.FirstOrDefault(s => string.Equals(s.Heading, heading, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Every heading in the document — lede plus every section at every nesting depth
+    /// (h2/h3/h4...) — used to check whether a required topic actually made it into the document
+    /// anywhere, not just as a top-level H2.</summary>
+    public static IReadOnlyList<string> AllHeadings(ContentDocument? document)
+    {
+        if (document is null)
+        {
+            return [];
+        }
+
+        var headings = new List<string>();
+        CollectHeadings(document.Lede, headings);
+        foreach (var section in document.Sections)
+        {
+            CollectHeadings(section, headings);
+        }
+
+        return headings;
+    }
+
+    private static void CollectHeadings(Section section, List<string> headings)
+    {
+        if (!string.IsNullOrWhiteSpace(section.Heading))
+        {
+            headings.Add(section.Heading);
+        }
+
+        foreach (var child in section.Children)
+        {
+            CollectHeadings(child, headings);
+        }
+    }
+
     /// <summary>Appends a real, code-authored closing CTA link to the last top-level section (or the
     /// lede, if there are no sections). The model is explicitly told not to write this link itself —
     /// only the orchestrator knows the real URL at generation time, so assigning it here is a field

@@ -97,6 +97,8 @@ export interface GeneratedContentResponse {
   jsonLdSchema: string | null;
   relatedArticleUrl: string | null;
   createdAtUtc: string;
+  noResearchWarning: string | null;
+  gaps: string[];
 }
 
 export interface ProjectDetail extends ProjectSummary {
@@ -232,6 +234,8 @@ export interface GeneratedContentSet {
   coldOutreachEmail: ColdOutreachEmailDraft | null;
   imagePrompts: ImagePromptsSet | null;
   toolPosts: ToolPostDraft[] | null;
+  articleNoResearchWarning: string | null;
+  articleGaps: string[] | null;
 }
 
 export interface ReviewVerdict {

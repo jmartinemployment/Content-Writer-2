@@ -96,6 +96,15 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
+
+        articleRow.NoResearchWarning = HasNoResearchInput(context) ? BuildNoResearchWarning(context.TargetKeyword) : null;
+        if (articleRow.NoResearchWarning is not null)
+        {
+            _logger.LogWarning(
+                "Project {ProjectId} has no crawled site content, no uploaded keyword sources, and no matched Home-page Use Case — generating from keyword \"{Keyword}\" alone.",
+                projectId, context.TargetKeyword);
+        }
+
         var metadata = ToMetadataDraft(articleRow);
         var (bodyMetadata, faqQuestions) = PrepareBodyInput(metadata, context.PeopleAlsoAskQuestions, context.TargetKeyword);
         if (!articleRow.SectionOutline.SequenceEqual(bodyMetadata.SectionOutline))
@@ -138,6 +147,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         }
 
         document = ContentDocumentText.AssignSectionIds(document);
+        articleRow.Gaps = FindGaps(document, context);
 
         var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var placeholderBlogUrl = CombineUrl(context.BlogBaseUrl, context.Department, $"{articleRow.Slug}-blog");
@@ -660,7 +670,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 k.Category,
                 k.ExtractedTitle,
                 k.OriginalFileName,
-                k.ExtractedHeadings,
+                k.Category == KeywordSourceCategory.KeywordResult ? ClusterHeadings(k.ExtractedHeadings) : k.ExtractedHeadings,
                 k.ExtractedParagraphs))
             .ToList();
 
@@ -745,6 +755,60 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             u.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
             keyword.Contains(u.Name, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>Dedupes near-duplicate headings within a single keyword SERP upload by clustering
+    /// them (TopicClusteringService.ClusterKeywordList) and keeping one representative heading per
+    /// cluster, so overlapping phrasing of the same topic doesn't get fed into prompts as if each
+    /// were distinct.</summary>
+    private static List<string> ClusterHeadings(List<string> headings)
+    {
+        if (headings.Count <= 1)
+        {
+            return headings;
+        }
+
+        return TopicClusteringService.ClusterKeywordList(headings)
+            .Select(c => c.PillarKeyword)
+            .ToList();
+    }
+
+    /// <summary>Checks each required topic (Notes-requested subtopics, plus the matched Home-page
+    /// Use Case name when present) against every heading actually in the generated document —
+    /// a required topic that didn't make it in anywhere is a "gap", reported rather than silently
+    /// accepted. Substring match (either direction) since the model may word a heading slightly
+    /// differently than the requested topic.</summary>
+    private static List<string> FindGaps(ContentDocument document, ProjectGenerationContext context)
+    {
+        var required = (context.DesiredHeadings ?? []).ToList();
+        if (context.MatchedUseCase is { } matched)
+        {
+            required.Add(matched.Name);
+        }
+
+        if (required.Count == 0)
+        {
+            return [];
+        }
+
+        var headings = ContentDocumentText.AllHeadings(document);
+        return required
+            .Where(topic => !headings.Any(h =>
+                h.Contains(topic, StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains(h, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>True when generation is about to run from nothing but the bare keyword — no
+    /// crawled site content, no uploaded keyword sources, no matched Home-page Use Case.</summary>
+    private static bool HasNoResearchInput(ProjectGenerationContext context) =>
+        context.CrawledHeadings.Count == 0
+        && context.CrawledParagraphs.Count == 0
+        && context.KeywordSources.Count == 0
+        && context.MatchedUseCase is null;
+
+    private static string BuildNoResearchWarning(string targetKeyword) =>
+        $"Generated from the keyword \"{targetKeyword}\" alone — no crawled site content, uploaded keyword sources, or matched Home-page Use Case were available.";
 
     private static string CombineUrl(string baseUrl, string department, string slug) =>
         $"{baseUrl.TrimEnd('/')}/{department}/{slug}";

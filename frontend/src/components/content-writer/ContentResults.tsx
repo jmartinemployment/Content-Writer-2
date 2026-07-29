@@ -105,6 +105,14 @@ export default function ContentResults({
           onClick={() => runStep("pillar-body", () => generatePillarBodyContent(projectId))}
           lockedMessage={!hasPillarPlan ? "Complete Step 1 first." : undefined}
         />
+        {result?.articleNoResearchWarning && (
+          <p className="pl-8 text-xs text-amber-600">{result.articleNoResearchWarning}</p>
+        )}
+        {result?.articleGaps && result.articleGaps.length > 0 && (
+          <p className="pl-8 text-xs text-amber-600">
+            Missing from the document: {result.articleGaps.join(", ")}
+          </p>
+        )}
 
         <StepRow
           step={3}

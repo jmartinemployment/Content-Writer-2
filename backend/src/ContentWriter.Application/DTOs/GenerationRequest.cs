@@ -175,4 +175,6 @@ public record GeneratedContentSet(
     SocialPostDraft? LinkedInPost,
     ColdOutreachEmailContent? ColdOutreachEmail,
     ImagePromptsContent? ImagePrompts,
-    IReadOnlyList<ToolPostContent>? ToolPosts);
+    IReadOnlyList<ToolPostContent>? ToolPosts,
+    string? ArticleNoResearchWarning = null,
+    IReadOnlyList<string>? ArticleGaps = null);

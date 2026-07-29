@@ -30,4 +30,5 @@ public record KeywordSourceResponse(
 public record GeneratedContentResponse(
     Guid Id, GeneratedContentType ContentType, string Title, string Slug,
     string? MetaDescription, IReadOnlyList<string> Keywords, int WordCount,
-    string BodyHtml, string? JsonLdSchema, string? RelatedArticleUrl, DateTime CreatedAtUtc);
+    string BodyHtml, string? JsonLdSchema, string? RelatedArticleUrl, DateTime CreatedAtUtc,
+    string? NoResearchWarning, IReadOnlyList<string> Gaps);
