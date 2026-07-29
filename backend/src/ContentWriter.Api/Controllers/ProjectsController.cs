@@ -40,7 +40,7 @@ public class ProjectsController : ControllerBase
         }
 
         var existing = (await _projectStore.ListAsync(
-            p => p.TargetKeyword == request.TargetKeyword && p.ProjectUrl == request.ProjectUrl,
+            p => p.Name == request.Name && p.TargetKeyword == request.TargetKeyword && p.ProjectUrl == request.ProjectUrl,
             cancellationToken)).FirstOrDefault();
         if (existing is not null)
         {
