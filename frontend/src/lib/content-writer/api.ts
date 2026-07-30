@@ -13,20 +13,24 @@ import type {
   ReviewVerdict,
 } from "./types";
 
+// Production talks to GeekAPI through this app's own same-origin proxy (src/app/api/cw/[...path])
+// so the GEEK_BACKEND_API_KEY it authenticates with stays server-side, never shipped to the
+// browser. Local dev talks directly to the standalone content-writer-v2 backend (no auth there).
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_CONTENT_WRITER_API_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://backend-production-c5950.up.railway.app"
-    : "http://localhost:5052");
+  (process.env.NODE_ENV === "production" ? "/api/cw" : "http://localhost:5052");
 
-/** True when the UI talks to the hosted Railway API (LM Studio is not available there). */
+/** True when the UI talks to the hosted API (LM Studio is not available there). */
 export function isProductionContentWriterApi(): boolean {
-  try {
-    const url = new URL(API_BASE_URL);
-    return url.hostname !== "localhost" && url.hostname !== "127.0.0.1";
-  } catch {
-    return false;
+  if (process.env.NEXT_PUBLIC_CONTENT_WRITER_API_URL) {
+    try {
+      const url = new URL(process.env.NEXT_PUBLIC_CONTENT_WRITER_API_URL);
+      return url.hostname !== "localhost" && url.hostname !== "127.0.0.1";
+    } catch {
+      return false;
+    }
   }
+  return process.env.NODE_ENV === "production";
 }
 
 export function defaultLlmProvider(): LlmProviderType {
