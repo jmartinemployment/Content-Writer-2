@@ -79,14 +79,6 @@ public interface IContentPromptBuilder
 
     ChatCompletionRequest BuildBlogLedePrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
 
-    ChatCompletionRequest BuildBlogSectionPrompt(
-        ProjectGenerationContext context,
-        ArticleDraft sourceArticle,
-        BlogMetadataDraft metadata,
-        string sectionHeading,
-        int sectionIndex,
-        int totalSections,
-        string? revisionNotes = null);
     ChatCompletionRequest BuildSocialPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string platform, string articleUrl);
     ChatCompletionRequest BuildColdOutreachPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string articleUrl);
     ChatCompletionRequest BuildSectionImagePromptsPrompt(
@@ -659,75 +651,19 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1024);
     }
 
-    public ChatCompletionRequest BuildBlogSectionPrompt(
-        ProjectGenerationContext context,
-        ArticleDraft sourceArticle,
-        BlogMetadataDraft metadata,
-        string sectionHeading,
-        int sectionIndex,
-        int totalSections,
-        string? revisionNotes = null)
-    {
-        var outlineContext = string.Join("\n", metadata.SectionOutline.Select((h, i) => $"{i + 1}. {h}"));
-        var isLast = sectionIndex == totalSections - 1;
-
-        var system = new StringBuilder()
-            .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
-            .AppendLine(BrandTones.ForWebpages())
-            .AppendLine("Write ONE section of a schema.org BlogPosting deep-dive article — conversational but substantive; first/second person allowed.")
-            .AppendLine($"Editorial standard ({ContentLengthTargets.BlogRangeLabel} words): {ContentLengthTargets.BlogEditorialDefinition}")
-            .AppendLine("Respond with ONLY a single valid JSON Section object for this section — no markdown fences, no commentary, no other sections.")
-            .AppendLine(SectionJsonContract)
-            .AppendLine("This section's own tag is \"h2\". Do NOT write introductory paragraphs before it — the opening lede is generated separately.")
-            .AppendLine("Include 2-3 h3 subsections nested in \"children\" where helpful, multiple substantive paragraphs, at least one list paragraph with concrete tips, and a specific example or data point.")
-            .AppendLine($"Target {ContentLengthTargets.BlogSectionMinWords}-{ContentLengthTargets.BlogSectionTargetMaxWords} words for this section alone. Shorter sections fail editorial review — add depth, not filler.")
-            .AppendLine("Do NOT duplicate the pillar article structure or reuse its H2 headings verbatim.")
-            .ToString();
-
-        if (isLast)
-        {
-            system += Environment.NewLine +
-                      $"Do not write a CTA/link to the pillar article yourself — that's appended afterward with the real URL. " +
-                      $"Just close out this section's own content. Minimum total blog length across all sections is {ContentLengthTargets.BlogMinWords:N0} words.";
-        }
-
-        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: sectionHeading);
-        if (revisionBlock is not null)
-        {
-            system += Environment.NewLine + revisionBlock;
-        }
-
-        var user = new StringBuilder()
-            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
-                $"Write section {sectionIndex + 1} of {totalSections}: \"{sectionHeading}\"."))
-            .AppendLine()
-            .AppendLine($"Target keyword: {context.TargetKeyword}")
-            .AppendLine($"Pillar title (reference only): {sourceArticle.Title}")
-            .AppendLine($"Blog title: {metadata.Title}")
-            .AppendLine($"Section to write ({sectionIndex + 1}/{totalSections}): {sectionHeading}")
-            .AppendLine()
-            .AppendLine("Blog outline (write ONLY the assigned section):")
-            .AppendLine(outlineContext)
-            .ToString();
-
-        return WithSectionSchema(new ChatCompletionRequest(
-            Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
-            Temperature: 0.72,
-            MaxOutputTokens: 4096));
-    }
-
     public ChatCompletionRequest BuildBlogBodyPrompt(
         ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata, string? revisionNotes = null)
     {
-        var pillarSections = sourceArticle.SectionOutline.Count > 0
-            ? string.Join(", ", sourceArticle.SectionOutline)
-            : "see pillar summary";
+        var pillarText = ContentDocumentText.Flatten(sourceArticle.Body);
 
         var system = new StringBuilder()
             .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine(BrandTones.ForWebpages())
-            .AppendLine("Write a deep-dive blog that teases the pillar — do NOT duplicate the pillar structure or reuse its H2 headings verbatim.")
-            .AppendLine("Use fresh headings (5-6 top-level sections). Substantive paragraphs with examples; first/second person allowed.")
+            .AppendLine("You are given the full text of an already-published pillar article. Repurpose it into a companion deep-dive blog post — ")
+            .AppendLine("reframe, condense, and re-angle the pillar's own substance rather than inventing new research. ")
+            .AppendLine("Do NOT duplicate the pillar's structure or reuse its H2 headings verbatim — use fresh headings (5-6 top-level sections) ")
+            .AppendLine("that pick out a distinct angle or subset of the pillar's material (duplicate structure/headings across the two published pages hurts SEO).")
+            .AppendLine("Substantive paragraphs with examples, drawn from what the pillar actually says; first/second person allowed.")
             .AppendLine($"Target at least {ContentLengthTargets.BlogMinWords:N0} words (aim for {ContentLengthTargets.BlogRangeLabel}). Do not stop early.")
             .AppendLine("Respond with ONLY the sections array — no markdown fences, no commentary:")
             .AppendLine(SectionsArrayJsonContract)
@@ -740,18 +676,16 @@ public class ContentPromptBuilder : IContentPromptBuilder
         }
 
         var user = new StringBuilder()
-            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
-                "Write the full blog body (all sections)."))
+            .AppendLine("Full pillar article text (this is your source material — repurpose it, don't re-research from scratch):")
+            .AppendLine(pillarText)
             .AppendLine()
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Pillar title (link target — do not reuse as blog title): {sourceArticle.Title}")
-            .AppendLine($"Pillar summary: {sourceArticle.MetaDescription}")
-            .AppendLine($"Pillar section topics (for reference only — do not copy as H2s): {pillarSections}")
             .AppendLine()
             .AppendLine($"Blog title: {metadata.Title}")
             .AppendLine($"Blog meta description: {metadata.MetaDescription}")
             .AppendLine()
-            .AppendLine("Write the blog body sections. Summarize 2-3 key takeaways, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
+            .AppendLine("Write the blog body sections. Summarize 2-3 key takeaways from the pillar, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
             .ToString();
 
         return WithSectionsArraySchema(new ChatCompletionRequest(

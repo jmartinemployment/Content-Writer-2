@@ -33,7 +33,7 @@ public static class ContentSectionJsonSchema
     };
 
     /// <summary>Schema for a single <see cref="Section"/> object — used by
-    /// <c>BuildArticleSectionPrompt</c>/<c>BuildArticleFaqSectionPrompt</c>/<c>BuildBlogSectionPrompt</c>.</summary>
+    /// <c>BuildArticleSectionPrompt</c>/<c>BuildArticleFaqSectionPrompt</c>.</summary>
     public static string SectionSchema { get; } = BuildSectionSchema();
 
     /// <summary>Schema for a top-level <c>{"sections": [...]}</c> response — used by prompts that

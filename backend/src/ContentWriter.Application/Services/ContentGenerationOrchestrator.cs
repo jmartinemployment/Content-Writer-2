@@ -1016,8 +1016,17 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             cancellationToken);
         var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "BlogPosting lede");
 
-        var sections = await GenerateBlogBodyAsync(provider, context, article, metadata, revisionNotes, cancellationToken);
+        _logger.LogInformation("Generating blog body (single call, repurposed from pillar text)");
+        var bodyResult = await provider.CompleteAsync(
+            _promptBuilder.BuildBlogBodyPrompt(context, article, metadata, revisionNotes),
+            cancellationToken);
+        var sections = LlmResponseJsonParser.ParseSections(bodyResult.Content, "BlogPosting body");
         var wordCount = ContentDocumentText.CountWords(sections);
+
+        // The model chooses its own headings in the single-call body prompt rather than following
+        // the metadata call's advisory outline — keep the stored outline truthful to what was
+        // actually written.
+        metadata = metadata with { SectionOutline = sections.Select(s => s.Heading).ToList() };
 
         if (wordCount < ContentLengthTargets.BlogMinWords)
         {
@@ -1039,80 +1048,12 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         var draft = new BlogDraft(
             metadata.Title,
             metadata.MetaDescription,
-            new ContentDocument(lede, sections),
+            new ContentDocument(lede, sections.ToList()),
             metadata.Keywords,
             wordCount,
             metadata.SectionOutline);
 
         return (draft, ledeType);
-    }
-
-    private async Task<List<Section>> GenerateBlogBodyAsync(
-        IContentGenerationProvider provider,
-        ProjectGenerationContext context,
-        ArticleDraft article,
-        BlogMetadataDraft metadata,
-        string? revisionNotes,
-        CancellationToken cancellationToken)
-    {
-        var sections = metadata.SectionOutline.Count > 0
-            ? metadata.SectionOutline
-            :
-            [
-                "Why this matters now",
-                "What the data shows",
-                "Key takeaways from the pillar",
-                "Practical steps you can take today",
-                "Common mistakes to avoid",
-                "What to read next"
-            ];
-
-        var parts = new List<Section>();
-
-        for (var i = 0; i < sections.Count; i++)
-        {
-            var heading = sections[i];
-            _logger.LogInformation(
-                "Generating blog section {Index}/{Total}: {Heading}",
-                i + 1,
-                sections.Count,
-                heading);
-
-            var section = await GenerateBlogSectionAsync(
-                provider, context, article, metadata, heading, i, sections.Count, revisionNotes, cancellationToken);
-            parts.Add(section);
-        }
-
-        return parts;
-    }
-
-    private async Task<Section> GenerateBlogSectionAsync(
-        IContentGenerationProvider provider,
-        ProjectGenerationContext context,
-        ArticleDraft article,
-        BlogMetadataDraft metadata,
-        string heading,
-        int sectionIndex,
-        int totalSections,
-        string? revisionNotes,
-        CancellationToken cancellationToken)
-    {
-        var sectionResult = await provider.CompleteAsync(
-            _promptBuilder.BuildBlogSectionPrompt(context, article, metadata, heading, sectionIndex, totalSections, revisionNotes),
-            cancellationToken);
-
-        var section = LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"BlogPosting section '{heading}'");
-
-        var sectionMin = (int)(ContentLengthTargets.BlogSectionMinWords * 0.85);
-        if (ContentDocumentText.CountWords(section) < sectionMin)
-        {
-            _logger.LogWarning(
-                "Blog section \"{Heading}\" is under {Minimum} words — no retry, single attempt only.",
-                heading,
-                sectionMin);
-        }
-
-        return section;
     }
 
     private static BlogMetadataDraft EnsureBlogSectionOutline(BlogMetadataDraft metadata)
