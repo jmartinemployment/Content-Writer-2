@@ -1176,6 +1176,15 @@ public class CompanyProfileOptions
     /// head + body noscript. Empty/invalid values skip GTM entirely.</summary>
     public string GtmContainerId { get; set; } = "GTM-K5CXSQRP";
 
+    public string FaviconUrl { get; set; } = "/favicon.ico";
+
+    /// <summary>Real search-console verification tokens (Google/Yandex/Yahoo). Empty by default —
+    /// a placeholder token in a verification meta tag is worse than no tag at all, so these are only
+    /// emitted when actually configured to a real value.</summary>
+    public string? GoogleSiteVerification { get; set; }
+    public string? YandexVerification { get; set; }
+    public string? YahooVerification { get; set; }
+
     /// <summary>How the publisher positions AI implementation services in pillar Tools sections.</summary>
     public string ImplementerPositioning { get; set; } =
         "Geek At Your Spot is an AI implementation consultancy for B2B organizations. " +

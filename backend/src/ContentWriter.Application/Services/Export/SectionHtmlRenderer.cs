@@ -22,7 +22,13 @@ public static class SectionHtmlRenderer
         string? jsonLdSchema,
         IReadOnlyDictionary<string, string?> additionalMeta,
         ContentDocument body,
-        string? gtmContainerId = null)
+        string? gtmContainerId = null,
+        string? siteName = null,
+        string? authorName = null,
+        string? faviconUrl = null,
+        string? googleSiteVerification = null,
+        string? yandexVerification = null,
+        string? yahooVerification = null)
     {
         var doc = new HtmlDocument();
         var html = doc.CreateElement("html");
@@ -34,10 +40,40 @@ public static class SectionHtmlRenderer
         AppendMeta(doc, head, "charset", null, "utf-8");
         AppendMeta(doc, head, null, "viewport", "width=device-width, initial-scale=1");
         AppendMeta(doc, head, null, "robots", "index, follow");
+        AppendMeta(doc, head, null, "googlebot", "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1");
 
+        var pageTitle = string.IsNullOrWhiteSpace(siteName) ? title : $"{title} | {siteName}";
         var titleNode = doc.CreateElement("title");
-        titleNode.AppendChild(CreateEncodedTextNode(doc, title));
+        titleNode.AppendChild(CreateEncodedTextNode(doc, pageTitle));
         head.AppendChild(titleNode);
+
+        if (!string.IsNullOrWhiteSpace(faviconUrl))
+        {
+            var icon = doc.CreateElement("link");
+            icon.SetAttributeValue("rel", "icon");
+            icon.SetAttributeValue("href", EncodeAttribute(faviconUrl));
+            head.AppendChild(icon);
+        }
+
+        if (!string.IsNullOrWhiteSpace(siteName))
+        {
+            AppendMeta(doc, head, null, "apple-mobile-web-app-capable", "yes");
+            AppendMeta(doc, head, null, "apple-mobile-web-app-status-bar-style", "default");
+            AppendMeta(doc, head, null, "apple-mobile-web-app-title", siteName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(googleSiteVerification))
+        {
+            AppendMeta(doc, head, null, "google-site-verification", googleSiteVerification);
+        }
+        if (!string.IsNullOrWhiteSpace(yandexVerification))
+        {
+            AppendMeta(doc, head, null, "yandex-verification", yandexVerification);
+        }
+        if (!string.IsNullOrWhiteSpace(yahooVerification))
+        {
+            AppendMeta(doc, head, null, "y_key", yahooVerification);
+        }
         if (!string.IsNullOrWhiteSpace(description))
         {
             AppendMeta(doc, head, null, "description", description);
@@ -50,7 +86,12 @@ public static class SectionHtmlRenderer
             head.AppendChild(link);
         }
 
-        AppendOpenGraphAndTwitter(doc, head, title, description, canonicalUrl, ogType, ogImage);
+        if (!string.IsNullOrWhiteSpace(authorName))
+        {
+            AppendMeta(doc, head, null, "author", authorName);
+        }
+
+        AppendOpenGraphAndTwitter(doc, head, pageTitle, description, canonicalUrl, ogType, ogImage, siteName);
 
         if (!string.IsNullOrWhiteSpace(jsonLdSchema) && jsonLdSchema.Trim() is not ("{}" or "[]"))
         {
@@ -98,7 +139,7 @@ public static class SectionHtmlRenderer
     }
 
     private static void AppendOpenGraphAndTwitter(
-        HtmlDocument doc, HtmlNode head, string title, string? description, string? canonicalUrl, string ogType, string? ogImage)
+        HtmlDocument doc, HtmlNode head, string title, string? description, string? canonicalUrl, string ogType, string? ogImage, string? siteName)
     {
         AppendMetaProperty(doc, head, "og:type", ogType);
         AppendMetaProperty(doc, head, "og:title", title);
@@ -114,6 +155,11 @@ public static class SectionHtmlRenderer
         {
             AppendMetaProperty(doc, head, "og:image", ogImage);
         }
+        if (!string.IsNullOrWhiteSpace(siteName))
+        {
+            AppendMetaProperty(doc, head, "og:site_name", siteName);
+        }
+        AppendMetaProperty(doc, head, "og:locale", "en_US");
 
         AppendMeta(doc, head, null, "twitter:card", string.IsNullOrWhiteSpace(ogImage) ? "summary" : "summary_large_image");
         AppendMeta(doc, head, null, "twitter:title", title);
@@ -124,6 +170,10 @@ public static class SectionHtmlRenderer
         if (!string.IsNullOrWhiteSpace(ogImage))
         {
             AppendMeta(doc, head, null, "twitter:image", ogImage);
+        }
+        if (!string.IsNullOrWhiteSpace(siteName))
+        {
+            AppendMeta(doc, head, null, "twitter:site", siteName);
         }
     }
 

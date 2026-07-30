@@ -104,6 +104,7 @@ public class HtmlExportService : IHtmlExportService
             ["blogSummary"] = row.BlogSummary,
             ["advertisingSummary"] = row.AdvertisingSummary,
             ["tags"] = row.Keywords.Count > 0 ? string.Join(",", row.Keywords) : null,
+            ["keywords"] = row.Keywords.Count > 0 ? string.Join(", ", row.Keywords) : null,
         };
 
         var canonicalUrl = CanonicalUrlFor(row, department);
@@ -119,7 +120,13 @@ public class HtmlExportService : IHtmlExportService
         // tag for those without needing a type check here too.
         var html = SectionHtmlRenderer.RenderDocument(
             title, row.MetaDescription, canonicalUrl, ogType, _companyProfile.PublisherLogoUrl, row.JsonLdSchema, meta, body,
-            _companyProfile.GtmContainerId);
+            _companyProfile.GtmContainerId,
+            _companyProfile.PublisherName,
+            _companyProfile.AuthorName,
+            _companyProfile.FaviconUrl,
+            _companyProfile.GoogleSiteVerification,
+            _companyProfile.YandexVerification,
+            _companyProfile.YahooVerification);
 
         return new ExportedHtmlDocument($"{folder}/{slug}.html", html);
     }
