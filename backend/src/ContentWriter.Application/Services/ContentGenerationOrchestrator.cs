@@ -845,21 +845,101 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         string? existingLedeHeading,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Generating pillar lede");
-        var ledeResult = await provider.CompleteAsync(
-            _promptBuilder.BuildArticleLedePrompt(context, metadata, revisionNotes, existingLedeHeading),
-            cancellationToken);
-        var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "TechnicalArticle lede");
-
         var mainSections = metadata.SectionOutline
             .Where(s => !PillarOutlineNormalizer.IsFaqSectionTitle(s))
             .ToList();
 
-        var sections = new List<Section>();
+        var introductionHeading = mainSections.FirstOrDefault(PillarSectionClassifier.IsIntroductionSection);
+
+        Section lede;
+        LedeType ledeType;
+        // Keyed by heading, not appended in call-completion order — calls now complete out of
+        // outline order (batch call covers several non-adjacent headings at once), so the document
+        // is reassembled in mainSections' original order at the end instead of relying on append order.
+        var sectionsByHeading = new Dictionary<string, Section>(StringComparer.OrdinalIgnoreCase);
+
+        if (introductionHeading is not null)
+        {
+            _logger.LogInformation("Generating pillar lede + introduction (combined call)");
+            var introIndex = mainSections.IndexOf(introductionHeading);
+            var ledeIntroResult = await provider.CompleteAsync(
+                _promptBuilder.BuildArticleLedeAndIntroductionPrompt(
+                    context, metadata, introductionHeading, introIndex, mainSections.Count, metadata.SectionOutline,
+                    isRegeneration, revisionNotes, existingLedeHeading),
+                cancellationToken);
+            (lede, ledeType, var introSection) = LlmResponseJsonParser.ParseLedeAndIntroduction(
+                ledeIntroResult.Content, "TechnicalArticle lede+introduction");
+            sectionsByHeading[introductionHeading] = introSection;
+        }
+        else
+        {
+            // Fallback: no heading in this outline matches the Introduction markers — generate the
+            // lede on its own rather than silently dropping it.
+            _logger.LogInformation("Generating pillar lede (no Introduction heading found to combine with)");
+            var ledeResult = await provider.CompleteAsync(
+                _promptBuilder.BuildArticleLedePrompt(context, metadata, revisionNotes, existingLedeHeading),
+                cancellationToken);
+            (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "TechnicalArticle lede");
+        }
+
+        // Batch every remaining main section that isn't Tools/Implementation into one call — those
+        // two stay their own calls (Tools per the documented truncation-avoidance rule; Implementation
+        // kept separate per the requested grouping).
+        var batchHeadings = mainSections
+            .Where(h => !sectionsByHeading.ContainsKey(h)
+                && !PillarOutlineNormalizer.IsToolsSection(h)
+                && !PillarSectionClassifier.IsImplementationSection(h))
+            .ToList();
+
+        if (batchHeadings.Count > 0)
+        {
+            _logger.LogInformation("Generating {Count} pillar sections in one batched call: {Headings}",
+                batchHeadings.Count, string.Join(", ", batchHeadings));
+            var batchResult = await provider.CompleteAsync(
+                _promptBuilder.BuildArticleSectionBatchPrompt(
+                    context, metadata, batchHeadings, metadata.SectionOutline, isRegeneration, revisionNotes),
+                cancellationToken);
+            var batchSections = LlmResponseJsonParser.ParseSections(batchResult.Content, "TechnicalArticle section batch");
+
+            // Match returned sections back to requested headings by position — the model is asked to
+            // return them in the same order it was given, but never trust that blindly for a keyed
+            // lookup; fall back to the model's own heading text if the count doesn't line up.
+            for (var b = 0; b < batchHeadings.Count; b++)
+            {
+                var section = b < batchSections.Count ? batchSections[b] : null;
+                if (section is not null)
+                {
+                    sectionsByHeading[batchHeadings[b]] = section;
+                }
+            }
+
+            var batchWordFloor = (int)(ContentLengthTargets.PillarSectionMinWords * 0.85);
+            for (var b = 0; b < batchHeadings.Count; b++)
+            {
+                if (!sectionsByHeading.TryGetValue(batchHeadings[b], out var section))
+                {
+                    _logger.LogWarning("Batched pillar section \"{Heading}\" was not returned by the model.", batchHeadings[b]);
+                    continue;
+                }
+
+                var words = ContentDocumentText.CountWords(section);
+                if (words < batchWordFloor)
+                {
+                    _logger.LogWarning(
+                        "Pillar section \"{Heading}\" is {Count} words (soft minimum {Minimum}) — no retry, single attempt only.",
+                        batchHeadings[b], words, batchWordFloor);
+                }
+            }
+        }
 
         for (var i = 0; i < mainSections.Count; i++)
         {
             var heading = mainSections[i];
+            if (sectionsByHeading.ContainsKey(heading))
+            {
+                continue;
+            }
+
             _logger.LogInformation(
                 "Generating pillar section {Index}/{Total}: {Heading}",
                 i + 1, mainSections.Count, heading);
@@ -879,7 +959,7 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                 section = LlmResponseJsonParser.ParseSection(sectionResult.Content, "h2", $"TechnicalArticle section '{heading}'");
             }
 
-            sections.Add(section);
+            sectionsByHeading[heading] = section;
 
             var sectionMin = PillarOutlineNormalizer.IsToolsSection(heading)
                 ? (int)(ContentLengthTargets.PillarToolsSectionMinWords * 0.85)
@@ -894,6 +974,11 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
                     sectionMin);
             }
         }
+
+        var sections = mainSections
+            .Where(h => sectionsByHeading.ContainsKey(h))
+            .Select(h => sectionsByHeading[h])
+            .ToList();
 
         if (faqQuestions.Count > 0)
         {

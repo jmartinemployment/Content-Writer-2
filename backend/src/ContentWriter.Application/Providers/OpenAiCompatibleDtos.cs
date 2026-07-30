@@ -64,4 +64,10 @@ internal sealed class OpenAiUsage
 {
     [JsonPropertyName("prompt_tokens")] public int PromptTokens { get; set; }
     [JsonPropertyName("completion_tokens")] public int CompletionTokens { get; set; }
+    [JsonPropertyName("prompt_tokens_details")] public OpenAiPromptTokensDetails? PromptTokensDetails { get; set; }
+}
+
+internal sealed class OpenAiPromptTokensDetails
+{
+    [JsonPropertyName("cached_tokens")] public int CachedTokens { get; set; }
 }

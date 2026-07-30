@@ -40,7 +40,8 @@ public record ChatCompletionResult(
     int? PromptTokens,
     int? CompletionTokens,
     int RetryCount = 0,
-    string? RetryReason = null);
+    string? RetryReason = null,
+    int? CachedTokens = null);
 
 public class ContentGenerationException : Exception
 {

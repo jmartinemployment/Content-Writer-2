@@ -28,7 +28,24 @@ internal static class ResearchBriefBuilder
         KeywordSourceCategory.GovDomain
     ];
 
+    /// <summary>Brief-only variant, without the trailing per-call instruction block — lets callers
+    /// that loop multiple calls per generation (pillar sections, Tools platforms) place this
+    /// byte-identical content as a stable prefix ahead of whatever varies per call, so OpenAI's
+    /// automatic prompt caching can actually discount it. See the 3-arg overload for callers that
+    /// only make one call and don't need the prefix to stay stable.</summary>
+    public static string Build(ProjectGenerationContext context, ResearchBriefPhase phase) =>
+        BuildCore(context, phase).ToString();
+
     public static string Build(ProjectGenerationContext context, ResearchBriefPhase phase, string instructions)
+    {
+        var sb = BuildCore(context, phase);
+        sb.AppendLine();
+        sb.AppendLine("=== INSTRUCTIONS ===");
+        sb.AppendLine(instructions);
+        return sb.ToString();
+    }
+
+    private static StringBuilder BuildCore(ProjectGenerationContext context, ResearchBriefPhase phase)
     {
         var sb = new StringBuilder();
 
@@ -76,11 +93,7 @@ internal static class ResearchBriefBuilder
                 break;
         }
 
-        sb.AppendLine();
-        sb.AppendLine("=== INSTRUCTIONS ===");
-        sb.AppendLine(instructions);
-
-        return sb.ToString();
+        return sb;
     }
 
     private static void AppendCompactSiteContext(StringBuilder sb, ProjectGenerationContext context, bool includeJsonLd)

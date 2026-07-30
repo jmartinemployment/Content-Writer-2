@@ -25,6 +25,19 @@ public interface IContentPromptBuilder
         string? revisionNotes = null,
         string? existingLedeHeading = null);
 
+    /// <summary>Combines the lede and Introduction section into one call — they cover overlapping
+    /// ground (both open the article), so writing them separately is redundant call volume.</summary>
+    ChatCompletionRequest BuildArticleLedeAndIntroductionPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string introductionHeading,
+        int introductionIndex,
+        int totalSections,
+        IReadOnlyList<string> fullOutline,
+        bool isRegeneration,
+        string? revisionNotes = null,
+        string? existingLedeHeading = null);
+
     /// <summary>
     /// Small revise pass for meta description (and title only when notes explicitly demand it).
     /// Returns null when <paramref name="revisionNotes"/> do not mention meta/title hygiene.
@@ -34,6 +47,17 @@ public interface IContentPromptBuilder
         string title,
         string metaDescription,
         string revisionNotes);
+
+    /// <summary>Writes several main-body H2 sections in one call (e.g. Benefits + any other
+    /// non-Implementation/Introduction sections) — call-count consolidation, same
+    /// SectionsArrayJsonContract/ParseSections pattern the blog fix and tool pages already use.</summary>
+    ChatCompletionRequest BuildArticleSectionBatchPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        IReadOnlyList<string> headings,
+        IReadOnlyList<string> fullOutline,
+        bool isRegeneration,
+        string? revisionNotes = null);
 
     ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
@@ -145,6 +169,9 @@ public class ContentPromptBuilder : IContentPromptBuilder
         "{\"ledeType\": \"creative\"|\"summary\", \"heading\": string (a real written headline — never the literal words \"Creative Lead\"/\"Summary Lede\"), " +
         "\"paragraphs\": [" + ParagraphJsonShape + ", ...], " +
         "\"imagePrompt\": string (40-400 words describing an image to accompany this opening — subject, setting, style; no text/words rendered in the image)}";
+
+    private const string LedeAndIntroductionJsonContract =
+        "{\"lede\": " + LedeJsonContract + ", \"introduction\": " + SectionJsonContract + "}";
 
     private static ChatCompletionRequest WithSectionSchema(ChatCompletionRequest request) =>
         request with { JsonSchemaName = "section", JsonSchema = ContentSectionJsonSchema.SectionSchema };
@@ -307,6 +334,87 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 1024);
     }
 
+    public ChatCompletionRequest BuildArticleLedeAndIntroductionPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        string introductionHeading,
+        int introductionIndex,
+        int totalSections,
+        IReadOnlyList<string> fullOutline,
+        bool isRegeneration,
+        string? revisionNotes = null,
+        string? existingLedeHeading = null)
+    {
+        var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
+
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine("Write TWO things for a schema.org TechnicalArticle pillar in one response: the opening lede, and the Introduction/Overview H2 section that follows it.")
+            .AppendLine($"Publisher positioning: {context.ImplementerPositioning}")
+            .AppendLine()
+            .AppendLine("LEDE:")
+            .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
+            .AppendLine("The heading is a real written headline for the opening — never the literal words \"Creative Lead\"/\"Summary Lede\"; that label goes only in ledeType.")
+            .AppendLine("Do NOT start with \"How\" or a question.")
+            .AppendLine("PAIN BEFORE SOLUTION (required): the first paragraph must open on the practitioner's pain with the manual / status-quo process ")
+            .AppendLine("for the target keyword (cost, delay, error, risk, wasted hours) — before naming AI or an intelligent solution.")
+            .AppendLine("Only after that pain is established, introduce how an AI-assisted approach changes the situation. 2-3 paragraphs total.")
+            .AppendLine("Also write imagePrompt: a prompt for an image-generation model to illustrate this opening.")
+            .AppendLine()
+            .AppendLine("INTRODUCTION SECTION:")
+            .AppendLine("This section's own tag is \"h2\". The lede above already opened the article — do NOT repeat its hook or its pain-point framing here; ")
+            .AppendLine("the Introduction covers different ground: scoping the topic, who it's for, and what the article will walk through.")
+            .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
+            .AppendLine("Include 2-3 h3 subsections nested in \"children\" with multiple text paragraphs, and at least one list paragraph where appropriate.")
+            .AppendLine("Each h3 is a keyword-level topic and MUST itself nest 1-3 h4 children covering concrete subtopics of that h3.")
+            .AppendLine("Do not leave an h3 as a leaf with only paragraphs — every h3 needs at least one substantive h4 child.")
+            .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
+            .AppendLine("A hypothetical scenario may still use a concrete operational outcome for punch, but MUST be explicitly labeled hypothetical/illustrative.")
+            .AppendLine("Do not reuse a stock \"40% reduction\" (or similar) percentage — vary outcomes and make them operationally specific.")
+            .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for the Introduction section.")
+            .AppendLine(BuildIntroductionSectionGuidance(context))
+            .AppendLine()
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine(LedeAndIntroductionJsonContract)
+            .ToString();
+
+        if (isRegeneration)
+        {
+            system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
+        }
+
+        var ledeNotes = ScopeRevisionNotesForLede(revisionNotes, existingLedeHeading, metadata.SectionOutline);
+        var ledeRevisionBlock = BuildRevisionNotesBlock(ledeNotes, sectionHeading: existingLedeHeading);
+        if (ledeRevisionBlock is not null)
+        {
+            system += Environment.NewLine + "LEDE " + ledeRevisionBlock;
+        }
+
+        var introRevisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: introductionHeading);
+        if (introRevisionBlock is not null)
+        {
+            system += Environment.NewLine + "INTRODUCTION " + introRevisionBlock;
+        }
+
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection))
+            .AppendLine()
+            .AppendLine($"Write the lede, then Introduction section {introductionIndex + 1} of {totalSections}: \"{introductionHeading}\".")
+            .AppendLine($"Article title: {metadata.Title}")
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Meta description: {metadata.MetaDescription}")
+            .AppendLine()
+            .AppendLine("Full article outline (for context only — write ONLY the lede and the Introduction section):")
+            .AppendLine(outlineContext)
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: isRegeneration ? 0.72 : 0.65,
+            MaxOutputTokens: 3072);
+    }
+
     public ChatCompletionRequest? BuildArticleMetaRevisionPrompt(
         ProjectGenerationContext context,
         string title,
@@ -343,6 +451,93 @@ public class ContentPromptBuilder : IContentPromptBuilder
             MaxOutputTokens: 512);
     }
 
+    public ChatCompletionRequest BuildArticleSectionBatchPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft metadata,
+        IReadOnlyList<string> headings,
+        IReadOnlyList<string> fullOutline,
+        bool isRegeneration,
+        string? revisionNotes = null)
+    {
+        var outlineContext = string.Join("\n", fullOutline.Select((h, i) => $"{i + 1}. {h}"));
+        var headingsList = string.Join("\n", headings.Select((h, i) => $"{i + 1}. \"{h}\""));
+
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine($"Write {headings.Count} sections of a schema.org TechnicalArticle pillar in one response — third person, expert, consultative, like a senior consultant advising a prospective client.")
+            .AppendLine($"Pillar standard ({ContentLengthTargets.PillarRangeLabel} words): {ContentLengthTargets.PillarEditorialDefinition}")
+            .AppendLine("Respond with ONLY the sections array, one entry per heading listed below, in the same order — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
+            .AppendLine("Each section's own tag is \"h2\". Include 2-3 h3 subsections nested in \"children\" with multiple text paragraphs, and at least one list paragraph where appropriate.")
+            .AppendLine("Each h3 is a keyword-level topic and MUST itself nest 1-3 h4 children covering concrete subtopics of that h3.")
+            .AppendLine("Do not leave an h3 as a leaf with only paragraphs — every h3 needs at least one substantive h4 child.")
+            .AppendLine("PROBLEM-FIRST OPENING (required) for each section: the first paragraph must open on the practitioner problem this section addresses ")
+            .AppendLine("(cost, delay, error, risk, wasted effort). Technology and capability come after that pain is clear.")
+            .AppendLine("Do NOT open any section with \"AI enables…\", \"Intelligent X is…\", a product capability list, or a definition of the technology.")
+            .AppendLine("Do not write these as neutral textbook explainers — every subsection should be framed through what an AI implementation " +
+                $"consultancy like {context.PublisherName} ({context.ImplementerPositioning}) actually does about the problem being discussed, not just background education on it.")
+            .AppendLine("Do NOT repeat the same point, example, or framing across sections in this batch — each must cover genuinely distinct ground.")
+            .AppendLine("If a hypothetical scenario is used, keep it to 1-2 sentences woven naturally into the surrounding paragraph.")
+            .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
+            .AppendLine("A hypothetical scenario may still use a concrete operational outcome for punch, but MUST be explicitly labeled hypothetical/illustrative. ")
+            .AppendLine("Do not reuse a stock \"40% reduction\" (or similar) percentage across sections — vary outcomes and make them operationally specific.")
+            .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for EACH section.")
+            .ToString();
+
+        // Per-heading guidance — these blocks are pure functions of context (not the loop index),
+        // so appending each one that applies across the whole batch is safe even combined into a
+        // single call, as long as they're clearly scoped to the heading they apply to.
+        foreach (var heading in headings)
+        {
+            if (PillarSectionClassifier.IsBenefitsSection(heading))
+            {
+                system += Environment.NewLine + $"For \"{heading}\":" + Environment.NewLine + BuildBenefitsSectionGuidance(context);
+            }
+            if (PillarSectionClassifier.IsBestPracticesSection(heading))
+            {
+                system += Environment.NewLine + $"For \"{heading}\":" + Environment.NewLine + BuildBestPracticesSectionGuidance(context);
+            }
+            if (PillarSectionClassifier.IsFutureTrendsSection(heading))
+            {
+                system += Environment.NewLine + $"For \"{heading}\":" + Environment.NewLine + BuildFutureTrendsSectionGuidance(context);
+            }
+        }
+
+        if (isRegeneration)
+        {
+            system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
+        }
+
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+            if (headings.Any(h => PillarSectionClassifier.IsBenefitsSection(h)) || NotesAskForConcreteness(revisionNotes, string.Empty))
+            {
+                system += Environment.NewLine + BuildConcretenessRevisionAmplifier();
+            }
+        }
+
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection))
+            .AppendLine()
+            .AppendLine("Write these sections, in this order:")
+            .AppendLine(headingsList)
+            .AppendLine()
+            .AppendLine($"Article title: {metadata.Title}")
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine()
+            .AppendLine("Full article outline (for context only — write ONLY the sections listed above):")
+            .AppendLine(outlineContext)
+            .ToString();
+
+        return WithSectionsArraySchema(new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: isRegeneration ? 0.72 : 0.65,
+            MaxOutputTokens: 6144));
+    }
+
     public ChatCompletionRequest BuildArticleSectionPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft metadata,
@@ -360,6 +555,11 @@ public class ContentPromptBuilder : IContentPromptBuilder
         var isImplementation = PillarSectionClassifier.IsImplementationSection(sectionHeading);
         var isFutureTrends = PillarSectionClassifier.IsFutureTrendsSection(sectionHeading);
 
+        // Fully static — identical across every pillar-section call in a run, so it forms a stable
+        // prefix OpenAI's automatic prompt caching can discount. Anything that varies per call
+        // (section-type guidance, the assigned heading, revision notes) lives in the user message
+        // instead, after the static research brief — see ResearchBriefBuilder.Build's no-instructions
+        // overload below.
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine(BrandTones.ForWebpages())
@@ -387,50 +587,53 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Target {ContentLengthTargets.PillarSectionMinWords}-{ContentLengthTargets.PillarSectionTargetMaxWords} words for this section. Do not write other sections.")
             .ToString();
 
+        var perCall = new StringBuilder();
+
         if (isIntroduction)
         {
-            system += Environment.NewLine + BuildIntroductionSectionGuidance(context);
+            perCall.AppendLine(BuildIntroductionSectionGuidance(context));
         }
 
         if (isBenefits)
         {
-            system += Environment.NewLine + BuildBenefitsSectionGuidance(context);
+            perCall.AppendLine(BuildBenefitsSectionGuidance(context));
         }
 
         if (isImplementation)
         {
-            system += Environment.NewLine + BuildImplementationSectionGuidance(context);
+            perCall.AppendLine(BuildImplementationSectionGuidance(context));
         }
 
         if (isBestPractices)
         {
-            system += Environment.NewLine + BuildBestPracticesSectionGuidance(context);
+            perCall.AppendLine(BuildBestPracticesSectionGuidance(context));
         }
 
         if (isFutureTrends)
         {
-            system += Environment.NewLine + BuildFutureTrendsSectionGuidance(context);
+            perCall.AppendLine(BuildFutureTrendsSectionGuidance(context));
         }
 
         if (isRegeneration)
         {
-            system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
+            perCall.AppendLine("REGENERATION: use fresh prose and examples.");
         }
 
         var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: sectionHeading);
         if (revisionBlock is not null)
         {
-            system += Environment.NewLine + revisionBlock;
+            perCall.AppendLine(revisionBlock);
             if (isBenefits || NotesAskForConcreteness(revisionNotes, sectionHeading))
             {
-                system += Environment.NewLine + BuildConcretenessRevisionAmplifier();
+                perCall.AppendLine(BuildConcretenessRevisionAmplifier());
             }
         }
 
         var user = new StringBuilder()
-            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection,
-                $"Write section {sectionIndex + 1} of {totalSections}: \"{sectionHeading}\"."))
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection))
             .AppendLine()
+            .Append(perCall)
+            .AppendLine($"Write section {sectionIndex + 1} of {totalSections}: \"{sectionHeading}\".")
             .AppendLine($"Article title: {metadata.Title}")
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Section to write: {sectionHeading}")
@@ -502,6 +705,8 @@ public class ContentPromptBuilder : IContentPromptBuilder
             $"{ContentLengthTargets.PillarToolsSectionMinWords / Math.Max(platformCount, 1)}" +
             $"-{ContentLengthTargets.PillarToolsSectionTargetMaxWords / Math.Max(platformCount, 1)}";
 
+        // Fully static across every platform call in a run — see BuildArticleSectionPrompt's
+        // identical rationale for why this needs to be a stable prefix for prompt caching.
         var system = new StringBuilder()
             .AppendLine("You are a senior technical content writer for an IT consulting firm that specializes in AI implementation.")
             .AppendLine(BrandTones.ForWebpages())
@@ -511,30 +716,33 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine("This section's own tag is \"h3\". Heading must be exactly the assigned platform name.")
             .AppendLine("Include: a brief overview paragraph of what the platform does for this use case, then a list paragraph with 2-4 factual capability bullets.")
             .AppendLine("Then one child Section (tag h4, heading \"How an AI implementer helps with {Platform}\").")
-            .AppendLine(BuildToolsPlatformChildGuidance(context, platformName))
             .AppendLine($"Target ~{perPlatformTarget} words for this platform subtree so the full Tools section lands near {ContentLengthTargets.PillarToolsSectionMinWords}-{ContentLengthTargets.PillarToolsSectionTargetMaxWords} words.")
             .AppendLine("Never invent a feature or capability; if unsure a feature exists, describe it generically instead of naming it.")
             .AppendLine("CRITICAL: there is no real case-study data available, so never present a named client, company, or engagement as if it were real. ")
             .AppendLine("A quantified outcome is fine only if explicitly labeled hypothetical/illustrative.")
             .ToString();
 
+        var perCall = new StringBuilder();
+        perCall.AppendLine(BuildToolsPlatformChildGuidance(context, platformName));
+
         if (isRegeneration)
         {
-            system += Environment.NewLine + "REGENERATION: use fresh prose and examples.";
+            perCall.AppendLine("REGENERATION: use fresh prose and examples.");
         }
 
         // Scope by platform name so Tool:/section notes about other platforms do not leak in.
         var revisionBlock = BuildRevisionNotesBlock(revisionNotes, sectionHeading: platformName);
         if (revisionBlock is not null)
         {
-            system += Environment.NewLine + revisionBlock;
+            perCall.AppendLine(revisionBlock);
         }
 
         var platformList = string.Join(", ", allPlatforms.Select((p, i) => i == platformIndex ? $"[{p}]" : p));
         var user = new StringBuilder()
-            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection,
-                $"Write Tools platform {platformIndex + 1} of {platformCount}: \"{platformName}\"."))
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ArticleSection))
             .AppendLine()
+            .Append(perCall)
+            .AppendLine($"Write Tools platform {platformIndex + 1} of {platformCount}: \"{platformName}\".")
             .AppendLine($"Article title: {metadata.Title}")
             .AppendLine($"Target keyword: {context.TargetKeyword}")
             .AppendLine($"Tools section heading: {toolsSectionHeading}")

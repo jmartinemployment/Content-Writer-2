@@ -250,6 +250,46 @@ public static class LlmResponseJsonParser
             $"Model did not return a valid lede for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
     }
 
+    private sealed record LedeAndIntroductionResponse(LedeResponse? Lede, Section? Introduction);
+
+    /// <summary>Parses the combined lede + Introduction section response (one call covering both,
+    /// since they cover overlapping ground) — same candidate-JSON repair loop as <see cref="ParseLede"/>.</summary>
+    public static (Section Lede, LedeType LedeType, Section Introduction) ParseLedeAndIntroduction(string rawContent, string label)
+    {
+        var cleaned = Clean(rawContent);
+
+        foreach (var candidate in CandidateJsonStrings(cleaned))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<LedeAndIntroductionResponse>(candidate, SectionJsonOptions);
+                if (parsed?.Lede is { } lede
+                    && !string.IsNullOrWhiteSpace(lede.Heading)
+                    && parsed.Introduction is { } introduction
+                    && !string.IsNullOrWhiteSpace(introduction.Heading))
+                {
+                    var ledeType = string.Equals(lede.LedeType, "summary", StringComparison.OrdinalIgnoreCase)
+                        ? LedeType.Summary
+                        : LedeType.Creative;
+                    var ledeSection = Normalize(new Section("h2", lede.Heading, lede.Paragraphs ?? [], null, [], lede.ImagePrompt));
+                    ValidateContentHygiene(ledeSection, $"{label} (lede)");
+
+                    var introSection = Normalize(introduction) with { Tag = "h2" };
+                    ValidateContentHygiene(introSection, $"{label} (introduction)");
+
+                    return (ledeSection, ledeType, introSection);
+                }
+            }
+            catch (JsonException)
+            {
+                // Try the next repaired candidate.
+            }
+        }
+
+        throw new ContentGenerationException(
+            $"Model did not return a valid lede+introduction for {label}. First 200 chars: {rawContent[..Math.Min(200, rawContent.Length)]}");
+    }
+
     private sealed record SectionsArrayResponse(List<Section>? Sections);
 
     private sealed record LedeResponse(string? LedeType, string Heading, List<Paragraph>? Paragraphs, string? ImagePrompt);

@@ -118,10 +118,16 @@ public class OpenAiProvider : IContentGenerationProvider
         catch { /* debug only */ }
         // #endregion
 
+        var cachedTokens = parsed.Usage?.PromptTokensDetails?.CachedTokens;
+        _logger.LogInformation(
+            "OpenAI usage: promptTokens={PromptTokens} cachedTokens={CachedTokens} completionTokens={CompletionTokens}",
+            parsed.Usage?.PromptTokens, cachedTokens, parsed.Usage?.CompletionTokens);
+
         return new ChatCompletionResult(
             Content: choice.Message.Content,
             ModelUsed: parsed.Model ?? _options.Model,
             PromptTokens: parsed.Usage?.PromptTokens,
-            CompletionTokens: parsed.Usage?.CompletionTokens);
+            CompletionTokens: parsed.Usage?.CompletionTokens,
+            CachedTokens: cachedTokens);
     }
 }
