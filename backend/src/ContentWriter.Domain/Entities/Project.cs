@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Domain.Entities;
@@ -24,6 +25,8 @@ public class Project
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 
+    /// <summary>Back-reference to the owning row; not serialized (ClientId is the durable FK) — a populated value here forms a JSON cycle through Client.Projects.</summary>
+    [JsonIgnore]
     public Client? Client { get; set; }
     public CrawledSite? CrawledSite { get; set; }
     public List<KeywordSource> KeywordSources { get; set; } = new();

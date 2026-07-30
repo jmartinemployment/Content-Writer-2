@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Domain.Entities;
@@ -6,6 +7,9 @@ public class GeneratedContent
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ProjectId { get; set; }
+
+    /// <summary>Back-reference to the owning row; not serialized (ProjectId is the durable FK) — a populated value here forms a JSON cycle through Project.GeneratedContents.</summary>
+    [JsonIgnore]
     public Project? Project { get; set; }
 
     public GeneratedContentType ContentType { get; set; }

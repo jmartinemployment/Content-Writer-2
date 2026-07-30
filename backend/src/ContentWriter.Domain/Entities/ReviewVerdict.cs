@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Domain.Entities;
@@ -6,6 +7,9 @@ public class ReviewVerdict
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid GeneratedContentId { get; set; }
+
+    /// <summary>Back-reference to the owning row; not serialized (GeneratedContentId is the durable FK) — a populated value here forms a JSON cycle through GeneratedContent.ReviewVerdicts.</summary>
+    [JsonIgnore]
     public GeneratedContent? GeneratedContent { get; set; }
 
     public ReviewVerdictStatus Status { get; set; }

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ContentWriter.Domain.Enums;
 
 namespace ContentWriter.Domain.Entities;
@@ -10,6 +11,9 @@ public class KeywordSource
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ProjectId { get; set; }
+
+    /// <summary>Back-reference to the owning row; not serialized (ProjectId is the durable FK) — a populated value here forms a JSON cycle through Project.KeywordSources.</summary>
+    [JsonIgnore]
     public Project? Project { get; set; }
 
     public KeywordSourceCategory Category { get; set; }

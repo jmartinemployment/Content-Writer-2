@@ -1,9 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace ContentWriter.Domain.Entities;
 
 public class CrawledSite
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ProjectId { get; set; }
+
+    /// <summary>Back-reference to the owning row; not serialized (ProjectId is the durable FK) — a populated value here forms a JSON cycle through Project.CrawledSite.</summary>
+    [JsonIgnore]
     public Project? Project { get; set; }
 
     public string SourceUrl { get; set; } = string.Empty;
