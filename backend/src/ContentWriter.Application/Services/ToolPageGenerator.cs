@@ -208,34 +208,43 @@ public sealed class ToolPageGenerator : IToolPageGenerator
     {
         List<Section> sections;
 
-        var cached = string.IsNullOrWhiteSpace(revisionNotes)
-            ? await _toolContentCacheStore.GetAsync(app.Name, cancellationToken)
-            : null;
+        // The cache is purely an optimization — any failure reading or writing it (malformed
+        // entry, the store itself unreachable/erroring, e.g. before its backing table exists)
+        // must fall back to full generation rather than break tool generation entirely.
+        CachedToolContent? cached = null;
+        if (string.IsNullOrWhiteSpace(revisionNotes))
+        {
+            try
+            {
+                cached = await _toolContentCacheStore.GetAsync(app.Name, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tool content cache lookup failed for '{App}' — generating fully.", app.Name);
+            }
+        }
 
+        List<Section>? cachedSections = null;
         if (cached is not null)
         {
             try
             {
-                var cachedSections = JsonSerializer.Deserialize<List<Section>>(cached.OverviewJson, CacheJsonOptions);
-                if (cachedSections is { Count: 2 })
-                {
-                    _logger.LogInformation("Tool content cache hit for '{App}' — reusing Overview/Key Capabilities.", app.Name);
-                    var remainderResult = await provider.CompleteAsync(
-                        _promptBuilder.BuildToolBodyRemainderPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
-                        cancellationToken);
-                    var remainderSections = LlmResponseJsonParser.ParseSections(remainderResult.Content, $"tool page remainder '{app.Name}'");
-                    sections = cachedSections.Concat(remainderSections).ToList();
-                }
-                else
-                {
-                    sections = await GenerateFullToolBodyAsync(provider, context, pillarMetadata, app, toolSlug, revisionNotes, cancellationToken);
-                }
+                cachedSections = JsonSerializer.Deserialize<List<Section>>(cached.OverviewJson, CacheJsonOptions);
             }
             catch (JsonException)
             {
                 _logger.LogWarning("Tool content cache entry for '{App}' was malformed — regenerating fully.", app.Name);
-                sections = await GenerateFullToolBodyAsync(provider, context, pillarMetadata, app, toolSlug, revisionNotes, cancellationToken);
             }
+        }
+
+        if (cachedSections is { Count: 2 })
+        {
+            _logger.LogInformation("Tool content cache hit for '{App}' — reusing Overview/Key Capabilities.", app.Name);
+            var remainderResult = await provider.CompleteAsync(
+                _promptBuilder.BuildToolBodyRemainderPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
+                cancellationToken);
+            var remainderSections = LlmResponseJsonParser.ParseSections(remainderResult.Content, $"tool page remainder '{app.Name}'");
+            sections = cachedSections.Concat(remainderSections).ToList();
         }
         else
         {
@@ -243,8 +252,15 @@ public sealed class ToolPageGenerator : IToolPageGenerator
 
             if (sections.Count >= 2)
             {
-                var overviewAndCapabilities = JsonSerializer.Serialize(sections.Take(2).ToList(), CacheJsonOptions);
-                await _toolContentCacheStore.SaveAsync(app.Name, app.Name, overviewAndCapabilities, cancellationToken);
+                try
+                {
+                    var overviewAndCapabilities = JsonSerializer.Serialize(sections.Take(2).ToList(), CacheJsonOptions);
+                    await _toolContentCacheStore.SaveAsync(app.Name, app.Name, overviewAndCapabilities, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Tool content cache save failed for '{App}' — this generation still succeeded, just not cached.", app.Name);
+                }
             }
         }
 
