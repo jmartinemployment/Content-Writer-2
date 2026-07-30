@@ -126,6 +126,16 @@ public interface IContentPromptBuilder
         SchemaBuilders.SoftwareApplicationDescriptor app,
         ContentDocument body);
 
+    /// <summary>Writes only the project-specific half of a tool page (Implementation Considerations,
+    /// When to Use) — used on a tool-content-cache hit, when Overview/Key Capabilities are reused
+    /// from a prior generation instead of rewritten.</summary>
+    ChatCompletionRequest BuildToolBodyRemainderPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft pillarMetadata,
+        SchemaBuilders.SoftwareApplicationDescriptor app,
+        string toolSlug,
+        string? revisionNotes = null);
+
     ChatCompletionRequest BuildSummaryVariantsPrompt(
         ProjectGenerationContext context,
         string title,
@@ -1082,6 +1092,58 @@ public class ContentPromptBuilder : IContentPromptBuilder
             Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
             Temperature: 0.5,
             MaxOutputTokens: 8192));
+    }
+
+    public ChatCompletionRequest BuildToolBodyRemainderPrompt(
+        ProjectGenerationContext context,
+        ArticleMetadataDraft pillarMetadata,
+        SchemaBuilders.SoftwareApplicationDescriptor app,
+        string toolSlug,
+        string? revisionNotes = null)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a senior technical writer for an IT consulting firm.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine($"Editorial standard: {ContentLengthTargets.ToolEditorialDefinition}")
+            .AppendLine("This tool's Overview and Key Capabilities sections already exist (reused from a prior generation) — do NOT write them.")
+            .AppendLine("Respond with ONLY the sections array for the remaining two sections — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
+            .AppendLine("Required top-level (h2) sections, in order: Implementation Considerations, When to Use.")
+            .AppendLine("Per-section budgets (approximate):")
+            .AppendLine("  - Implementation Considerations: ~450-600 words")
+            .AppendLine("  - When to Use: ~300-400 words")
+            .AppendLine($"Only describe real, verifiable capabilities of {app.Name} — never invent a feature, integration, or claim to fill space.")
+            .AppendLine($"Implementation Considerations must not be generic industry advice — cover, made concrete to {app.Name} specifically:")
+            .AppendLine($"  1. Accelerated deployment — what shortens go-live for {app.Name} (pre-built connectors, templated setup, phased rollout).")
+            .AppendLine($"  2. Data model design — what {app.Name}-specific data structure/mapping decisions matter upfront.")
+            .AppendLine($"  3. Workflow/process configuration — what {app.Name}-specific approval chains, routing, or automation logic get configured.")
+            .AppendLine($"  4. Custom code/development — {app.Name}'s own extension mechanism if it has one (API, scripting, SDK); if it's config-only, say so rather than inventing one.")
+            .AppendLine($"Frame these as {context.PublisherName} ({context.ImplementerPositioning}) closing the gap for a client — consultative, not a sales pitch.")
+            .AppendLine("There is no real case-study data available — never present a named client, company, or engagement as if it were real. " +
+                "A quantified outcome is fine for narrative punch only if explicitly labeled hypothetical/illustrative — avoid recycling a stock 40% line.")
+            .ToString();
+
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes, toolSlug: toolSlug);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.ToolBody, $"Write the Implementation Considerations and When to Use sections for {app.Name}."))
+            .AppendLine()
+            .AppendLine($"Target keyword context: {context.TargetKeyword}")
+            .AppendLine($"Pillar topic: {pillarMetadata.Title}")
+            .AppendLine($"Tool name: {app.Name}")
+            .AppendLine($"Tool summary from pillar: {app.Description ?? "N/A"}")
+            .AppendLine($"Public path: /tools/{toolSlug}")
+            .AppendLine("Write expert third-person technical prose focused on this single platform.")
+            .ToString();
+
+        return WithSectionsArraySchema(new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
+            Temperature: 0.5,
+            MaxOutputTokens: 4096));
     }
 
     public ChatCompletionRequest BuildToolMetadataPrompt(

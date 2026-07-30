@@ -24,12 +24,19 @@ public static class ContentWriterServiceRegistration
     public static IServiceCollection AddContentWriter(
         this IServiceCollection services,
         IConfiguration configuration,
-        Func<IServiceProvider, IPersistenceStore>? persistenceStoreFactory = null)
+        Func<IServiceProvider, IPersistenceStore>? persistenceStoreFactory = null,
+        Func<IServiceProvider, IToolContentCacheStore>? toolContentCacheStoreFactory = null)
     {
         var dataDirectory = configuration["ContentWriter:DataDirectory"] ?? "./data";
         services.AddSingleton<IPersistenceStore>(sp =>
             persistenceStoreFactory?.Invoke(sp)
             ?? new FileSystemPersistenceStore(dataDirectory, sp.GetRequiredService<ILogger<FileSystemPersistenceStore>>()));
+
+        // Same host-agnostic pattern as IPersistenceStore above: GeekAPI supplies a
+        // GeekRepository-backed store reusing its own credential; standalone/dev gets a no-op
+        // default so ToolPageGenerator's cache-check path is always safe to call.
+        services.AddSingleton<IToolContentCacheStore>(sp =>
+            toolContentCacheStoreFactory?.Invoke(sp) ?? new NullToolContentCacheStore());
 
         // Project/Client stores with durable backing
         services.AddSingleton<IProjectStore>(sp =>

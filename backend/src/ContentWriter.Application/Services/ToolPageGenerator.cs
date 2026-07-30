@@ -4,7 +4,9 @@ using ContentWriter.Application.Services.PromptBuilders;
 using ContentWriter.Application.Services.SchemaBuilders;
 using ContentWriter.Domain.Entities;
 using ContentWriter.Domain.Enums;
+using ContentWriter.Infrastructure;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace ContentWriter.Application.Services;
 
@@ -29,17 +31,22 @@ public sealed record ToolGenerationResult(
 public sealed class ToolPageGenerator : IToolPageGenerator
 {
     private const int MaxTools = 5;
+    private static readonly JsonSerializerOptions CacheJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly ISoftwareApplicationSchemaBuilder _softwareApplicationSchemaBuilder;
     private readonly IContentPromptBuilder _promptBuilder;
+    private readonly IToolContentCacheStore _toolContentCacheStore;
     private readonly ILogger<ToolPageGenerator> _logger;
 
     public ToolPageGenerator(
         ISoftwareApplicationSchemaBuilder softwareApplicationSchemaBuilder,
         IContentPromptBuilder promptBuilder,
+        IToolContentCacheStore toolContentCacheStore,
         ILogger<ToolPageGenerator> logger)
     {
         _softwareApplicationSchemaBuilder = softwareApplicationSchemaBuilder;
         _promptBuilder = promptBuilder;
+        _toolContentCacheStore = toolContentCacheStore;
         _logger = logger;
     }
 
@@ -184,7 +191,12 @@ public sealed class ToolPageGenerator : IToolPageGenerator
     }
 
     /// <summary>Generates the tool page as a sections array; the first section (always "Overview")
-    /// becomes the document's lede, the rest become its top-level sections.</summary>
+    /// becomes the document's lede, the rest become its top-level sections. Overview + Key
+    /// Capabilities (sections 0-1, tool-intrinsic, not department-specific) are cached across
+    /// projects/departments via <see cref="_toolContentCacheStore"/> — a cache hit only calls the
+    /// LLM for the two remaining project-specific sections (Implementation Considerations, When to
+    /// Use). Skips the cache entirely on a targeted revision (revisionNotes present) so feedback
+    /// always regenerates fresh content, which then refreshes the cache for future reuse.</summary>
     private async Task<ContentDocument> GenerateToolBodyWithValidationAsync(
         IContentGenerationProvider provider,
         ProjectGenerationContext context,
@@ -194,10 +206,48 @@ public sealed class ToolPageGenerator : IToolPageGenerator
         string? revisionNotes,
         CancellationToken cancellationToken)
     {
-        var result = await provider.CompleteAsync(
-            _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
-            cancellationToken);
-        var sections = LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'");
+        List<Section> sections;
+
+        var cached = string.IsNullOrWhiteSpace(revisionNotes)
+            ? await _toolContentCacheStore.GetAsync(app.Name, cancellationToken)
+            : null;
+
+        if (cached is not null)
+        {
+            try
+            {
+                var cachedSections = JsonSerializer.Deserialize<List<Section>>(cached.OverviewJson, CacheJsonOptions);
+                if (cachedSections is { Count: 2 })
+                {
+                    _logger.LogInformation("Tool content cache hit for '{App}' — reusing Overview/Key Capabilities.", app.Name);
+                    var remainderResult = await provider.CompleteAsync(
+                        _promptBuilder.BuildToolBodyRemainderPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
+                        cancellationToken);
+                    var remainderSections = LlmResponseJsonParser.ParseSections(remainderResult.Content, $"tool page remainder '{app.Name}'");
+                    sections = cachedSections.Concat(remainderSections).ToList();
+                }
+                else
+                {
+                    sections = await GenerateFullToolBodyAsync(provider, context, pillarMetadata, app, toolSlug, revisionNotes, cancellationToken);
+                }
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning("Tool content cache entry for '{App}' was malformed — regenerating fully.", app.Name);
+                sections = await GenerateFullToolBodyAsync(provider, context, pillarMetadata, app, toolSlug, revisionNotes, cancellationToken);
+            }
+        }
+        else
+        {
+            sections = await GenerateFullToolBodyAsync(provider, context, pillarMetadata, app, toolSlug, revisionNotes, cancellationToken);
+
+            if (sections.Count >= 2)
+            {
+                var overviewAndCapabilities = JsonSerializer.Serialize(sections.Take(2).ToList(), CacheJsonOptions);
+                await _toolContentCacheStore.SaveAsync(app.Name, app.Name, overviewAndCapabilities, cancellationToken);
+            }
+        }
+
         var wordCount = ContentDocumentText.CountWords(sections);
 
         // Soft gate (matches blog): out-of-range drafts still save so the user can review/regenerate.
@@ -214,5 +264,20 @@ public sealed class ToolPageGenerator : IToolPageGenerator
 
         var lede = sections[0] with { Tag = "h2" };
         return new ContentDocument(lede, sections.Skip(1).ToList());
+    }
+
+    private async Task<List<Section>> GenerateFullToolBodyAsync(
+        IContentGenerationProvider provider,
+        ProjectGenerationContext context,
+        ArticleMetadataDraft pillarMetadata,
+        SoftwareApplicationDescriptor app,
+        string toolSlug,
+        string? revisionNotes,
+        CancellationToken cancellationToken)
+    {
+        var result = await provider.CompleteAsync(
+            _promptBuilder.BuildToolBodyPrompt(context, pillarMetadata, app, toolSlug, revisionNotes),
+            cancellationToken);
+        return LlmResponseJsonParser.ParseSections(result.Content, $"tool page '{app.Name}'").ToList();
     }
 }
