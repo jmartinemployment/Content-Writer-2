@@ -84,8 +84,10 @@ internal static class ResearchBriefBuilder
                 break;
 
             case ResearchBriefPhase.BlogSection:
+                AppendCompactSiteContext(sb, context, includeJsonLd: false);
                 AppendKeywordSerpBrief(sb, context, maxHeadingsPerFile: 3, maxParagraphsPerFile: 1);
-                AppendAuthoritativeSourcesBrief(sb, context, maxSources: 1, maxHeadingsPerFile: 2, maxParagraphsPerFile: 2);
+                AppendAuthoritativeSourcesBrief(sb, context, maxSources: 2, maxHeadingsPerFile: 2, maxParagraphsPerFile: 2);
+                AppendCompetitorGapsBrief(sb, context);
                 break;
 
             case ResearchBriefPhase.ToolBody:

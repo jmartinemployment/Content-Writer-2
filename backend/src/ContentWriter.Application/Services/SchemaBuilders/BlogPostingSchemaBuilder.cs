@@ -51,16 +51,20 @@ public class BlogPostingSchemaBuilder : IBlogPostingSchemaBuilder
             },
             ["keywords"] = string.Join(", ", metadata.Keywords),
             ["wordCount"] = metadata.WordCount,
-            // Cross-link back to the source TechArticle this post expands on.
-            ["citation"] = new[]
+        };
+
+        // Cross-link back to the source TechArticle when one exists (companion blog).
+        if (!string.IsNullOrWhiteSpace(relatedArticleUrl))
+        {
+            schema["citation"] = new[]
             {
                 new Dictionary<string, object?>
                 {
                     ["@type"] = "TechArticle",
                     ["url"] = relatedArticleUrl
                 }
-            }
-        };
+            };
+        }
 
         return JsonSerializer.Serialize(schema, JsonOptions);
     }

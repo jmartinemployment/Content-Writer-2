@@ -103,6 +103,17 @@ public interface IContentPromptBuilder
 
     ChatCompletionRequest BuildBlogLedePrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, BlogMetadataDraft metadata);
 
+    /// <summary>
+    /// Standalone blog (no pillar) — Content Creator starting-content flexibility.
+    /// Uses research brief + keyword, not pillar-repurpose prompts.
+    /// </summary>
+    ChatCompletionRequest BuildStandaloneBlogMetadataPrompt(ProjectGenerationContext context);
+
+    ChatCompletionRequest BuildStandaloneBlogLedePrompt(ProjectGenerationContext context, BlogMetadataDraft metadata);
+
+    ChatCompletionRequest BuildStandaloneBlogBodyPrompt(
+        ProjectGenerationContext context, BlogMetadataDraft metadata, string? revisionNotes = null);
+
     ChatCompletionRequest BuildSocialPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string platform, string articleUrl);
     ChatCompletionRequest BuildColdOutreachPrompt(ProjectGenerationContext context, ArticleDraft sourceArticle, string articleUrl);
     ChatCompletionRequest BuildSectionImagePromptsPrompt(
@@ -904,6 +915,95 @@ public class ContentPromptBuilder : IContentPromptBuilder
             .AppendLine($"Blog meta description: {metadata.MetaDescription}")
             .AppendLine()
             .AppendLine("Write the blog body sections. Summarize 2-3 key takeaways from the pillar, add a practical tip or short story, and end with a CTA to read the full technical article for implementation depth.")
+            .ToString();
+
+        return WithSectionsArraySchema(new ChatCompletionRequest(
+            Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
+            Temperature: 0.7,
+            MaxOutputTokens: 6144));
+    }
+
+    public ChatCompletionRequest BuildStandaloneBlogMetadataPrompt(ProjectGenerationContext context)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary.")
+            .AppendLine(BlogMetadataJsonContract)
+            .AppendLine("This is a standalone deep-dive blog — there is no companion pillar article. Title should be a conversational hook, question, or numbered angle.")
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
+                $"Plan a standalone deep-dive blog ({ContentLengthTargets.BlogRangeLabel} words) with a distinct title, angle, and {ContentLengthTargets.BlogSectionCountMin}-{ContentLengthTargets.BlogSectionCountTarget} H2 section headings."))
+            .AppendLine($"Editorial standard: {ContentLengthTargets.BlogEditorialDefinition}")
+            .AppendLine("Each section must support substantive depth — data points, examples, and implementation context.")
+            .AppendLine("Return title, metaDescription, keywords, and sectionOutline only (body is written separately).")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user) },
+            Temperature: 0.6,
+            MaxOutputTokens: 1536);
+    }
+
+    public ChatCompletionRequest BuildStandaloneBlogLedePrompt(ProjectGenerationContext context, BlogMetadataDraft metadata)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine("Write the opening lede for a schema.org BlogPosting deep-dive — conversational but substantive; first/second person allowed.")
+            .AppendLine("Prefer a creative (hook/narrative) opening; use a summary (direct thesis-first) opening only if a creative angle genuinely doesn't fit this topic.")
+            .AppendLine("2-3 paragraphs: hook, stakes, and who this is for.")
+            .AppendLine("Also write imagePrompt: a prompt for an image-generation model to illustrate this opening.")
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences, no commentary:")
+            .AppendLine(LedeJsonContract)
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Blog title: {metadata.Title}")
+            .ToString();
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user)],
+            Temperature: 0.7,
+            MaxOutputTokens: 1024);
+    }
+
+    public ChatCompletionRequest BuildStandaloneBlogBodyPrompt(
+        ProjectGenerationContext context, BlogMetadataDraft metadata, string? revisionNotes = null)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You are a content marketer for an IT consulting firm that specializes in AI implementation.")
+            .AppendLine(BrandTones.ForWebpages())
+            .AppendLine("Write a standalone deep-dive blog post from the research brief and keyword — there is no pillar article to repurpose.")
+            .AppendLine("Substantive paragraphs with examples and implementation context; first/second person allowed.")
+            .AppendLine($"Target at least {ContentLengthTargets.BlogMinWords:N0} words (aim for {ContentLengthTargets.BlogRangeLabel}). Do not stop early.")
+            .AppendLine("Respond with ONLY the sections array — no markdown fences, no commentary:")
+            .AppendLine(SectionsArrayJsonContract)
+            .ToString();
+
+        var revisionBlock = BuildRevisionNotesBlock(revisionNotes);
+        if (revisionBlock is not null)
+        {
+            system += Environment.NewLine + revisionBlock;
+        }
+
+        var user = new StringBuilder()
+            .AppendLine(ResearchBriefBuilder.Build(context, ResearchBriefPhase.BlogSection,
+                "Write the blog body sections from this research. Ground claims in the brief; do not invent statistics."))
+            .AppendLine()
+            .AppendLine($"Target keyword: {context.TargetKeyword}")
+            .AppendLine($"Blog title: {metadata.Title}")
+            .AppendLine($"Blog meta description: {metadata.MetaDescription}")
+            .AppendLine()
+            .AppendLine("Advisory section outline (prefer these H2s when they still fit, but you may refine):")
+            .AppendLine(string.Join(Environment.NewLine, (metadata.SectionOutline ?? []).Select(h => $"- {h}")))
+            .AppendLine()
+            .AppendLine("Write the blog body sections. End with a clear next-step CTA for the reader.")
             .ToString();
 
         return WithSectionsArraySchema(new ChatCompletionRequest(

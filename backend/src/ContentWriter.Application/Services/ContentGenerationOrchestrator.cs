@@ -255,8 +255,13 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     public async Task<GeneratedContentSet> GenerateBlogAsync(Guid projectId, string? revisionNotes = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
-        var articleRow = RequireCompletePillar(project);
+        var pillar = TryGetCompletePillar(project);
+        if (pillar is null)
+        {
+            return await GenerateStandaloneBlogAsync(project, revisionNotes, cancellationToken);
+        }
 
+        var articleRow = pillar;
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
         var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
@@ -323,6 +328,103 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
 
         await SaveProjectAsync(project, ProjectStatus.ReadyForGeneration, cancellationToken);
         return Assemble(project);
+    }
+
+    /// <summary>
+    /// Content Creator path: blog without a pillar — research brief + keyword via standalone prompts.
+    /// </summary>
+    private async Task<GeneratedContentSet> GenerateStandaloneBlogAsync(
+        Project project,
+        string? revisionNotes,
+        CancellationToken cancellationToken)
+    {
+        var context = BuildContext(project);
+        var provider = _providerFactory.Get(project.PreferredProvider);
+
+        _logger.LogInformation(
+            "Generating standalone blog (no pillar) for project {ProjectId} via {Provider}",
+            project.Id,
+            provider.ProviderType);
+
+        var (blogDraft, ledeType) = await GenerateStandaloneBlogDraftAsync(provider, context, revisionNotes, cancellationToken);
+        var blogSlug = SlugHelper.Slugify(blogDraft.Title);
+        var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogSlug);
+
+        var now = DateTime.UtcNow;
+        var blogMetadata = new ContentMetadata(
+            blogDraft.Title, blogDraft.MetaDescription, context.AuthorName, context.PublisherName,
+            context.PublisherLogoUrl, blogUrl, context.PublisherLogoUrl, now, now, blogDraft.Keywords, blogDraft.WordCount);
+        var blogJsonLd = _blogSchemaBuilder.Build(blogMetadata, relatedArticleUrl: string.Empty);
+
+        var summaryVariants = await GenerateSummaryVariantsAsync(
+            provider, context, blogDraft.Title, blogDraft.Body, blogDraft.MetaDescription, "blog", cancellationToken);
+
+        RemoveGeneratedContents(project, GeneratedContentType.BlogPost);
+
+        await AddContentAsync(project, provider.ProviderType, new GeneratedContent
+        {
+            ProjectId = project.Id,
+            ContentType = GeneratedContentType.BlogPost,
+            Title = blogDraft.Title,
+            Slug = blogSlug,
+            MetaDescription = blogDraft.MetaDescription,
+            Keywords = blogDraft.Keywords,
+            WordCount = blogDraft.WordCount,
+            SectionOutline = blogDraft.SectionOutline,
+            Body = blogDraft.Body,
+            LedeType = ledeType,
+            JsonLdSchema = blogJsonLd,
+            RelatedArticleUrl = null,
+            Summary = summaryVariants.Summary,
+            MainSummary = summaryVariants.MainSummary,
+            HeroSummary = summaryVariants.HeroSummary,
+            HomeSummary = summaryVariants.HomeSummary,
+            BlogSummary = summaryVariants.BlogSummary,
+            AdvertisingSummary = summaryVariants.AdvertisingSummary,
+            GeneratedByProvider = provider.ProviderType,
+            GeneratedByModel = ResolveModelName(project.PreferredProvider)
+        }, cancellationToken);
+
+        await SaveProjectAsync(project, ProjectStatus.ReadyForGeneration, cancellationToken);
+        return Assemble(project);
+    }
+
+    private async Task<(BlogDraft Draft, LedeType LedeType)> GenerateStandaloneBlogDraftAsync(
+        IContentGenerationProvider provider,
+        ProjectGenerationContext context,
+        string? revisionNotes,
+        CancellationToken cancellationToken)
+    {
+        var metadataResult = await provider.CompleteAsync(
+            _promptBuilder.BuildStandaloneBlogMetadataPrompt(context),
+            cancellationToken);
+        var metadata = NormalizeBlogMetadata(ParseJson<BlogMetadataDraft>(metadataResult.Content, "BlogPosting metadata"));
+        metadata = EnsureBlogSectionOutline(metadata);
+
+        _logger.LogInformation("Generating standalone blog lede");
+        var ledeResult = await provider.CompleteAsync(
+            _promptBuilder.BuildStandaloneBlogLedePrompt(context, metadata),
+            cancellationToken);
+        var (lede, ledeType) = LlmResponseJsonParser.ParseLede(ledeResult.Content, "BlogPosting lede");
+
+        _logger.LogInformation("Generating standalone blog body");
+        var bodyResult = await provider.CompleteAsync(
+            _promptBuilder.BuildStandaloneBlogBodyPrompt(context, metadata, revisionNotes),
+            cancellationToken);
+        var sections = LlmResponseJsonParser.ParseSections(bodyResult.Content, "BlogPosting body");
+        var wordCount = ContentDocumentText.CountWords(sections);
+
+        metadata = metadata with { SectionOutline = sections.Select(s => s.Heading).ToList() };
+
+        var draft = new BlogDraft(
+            metadata.Title,
+            metadata.MetaDescription,
+            new ContentDocument(lede, sections.ToList()),
+            metadata.Keywords,
+            wordCount,
+            metadata.SectionOutline);
+
+        return (draft, ledeType);
     }
 
     public async Task<GeneratedContentSet> GenerateSocialAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -423,15 +525,28 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         Guid projectId, IReadOnlySet<string>? sectionHeadingsToTest = null, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
-        var articleRow = RequireCompletePillar(project);
+        var articleRow = TryGetCompletePillar(project);
         var blogRow = RequireCompleteBlog(project);
 
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
-        var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
+        var article = articleRow is null
+            ? new ArticleDraft(
+                Title: blogRow.Title,
+                MetaDescription: blogRow.MetaDescription ?? string.Empty,
+                Body: blogRow.Body ?? new ContentDocument(
+                    new Section("h2", "Opening", Array.Empty<Paragraph>(), null, Array.Empty<Section>()),
+                    Array.Empty<Section>()),
+                Keywords: blogRow.Keywords,
+                WordCount: blogRow.WordCount,
+                SectionOutline: blogRow.SectionOutline)
+            : GeneratedContentSetAssembler.ToArticleDraft(articleRow);
         var blog = GeneratedContentSetAssembler.ToBlogDraft(blogRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
+        var articleUrl = articleRow is null
+            ? string.Empty
+            : CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
         var blogUrl = CombineUrl(context.BlogBaseUrl, context.Department, blogRow.Slug);
+        var slugForRows = articleRow?.Slug ?? blogRow.Slug;
 
         var toolTitles = project.GeneratedContents
             .Where(c => c.ContentType == GeneratedContentType.ToolPost)
@@ -440,15 +555,15 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             .ToList();
 
         var allSections = ContentDocumentText.BuildSectionTargets(
-            articleRow.DisplayTitle ?? articleRow.Title,
-            articleRow.Body,
+            articleRow is null ? null : (articleRow.DisplayTitle ?? articleRow.Title),
+            articleRow?.Body,
             blogRow.DisplayTitle ?? blogRow.Title,
             blogRow.Body,
             toolTitles);
         if (allSections.Count == 0)
         {
             throw new ContentGenerationException(
-                "Pillar and blog must each include at least one top-level section before generating image prompts.");
+                "Blog must include at least one top-level section before generating image prompts.");
         }
 
         // Scoped to a subset (e.g. only the sections a prior run failed to produce) when
@@ -478,15 +593,15 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         // Only remove existing rows for the sections we're about to replace, and only now that
         // generation has actually succeeded — a failed/retried-out run must never destroy image
         // prompts that were already generated successfully in a prior run.
-        RemoveImagePromptRowsForSections(project, articleRow.Slug, sections);
+        RemoveImagePromptRowsForSections(project, slugForRows, sections);
 
         foreach (var section in draft.Sections)
         {
             await AddSectionImagePromptRowAsync(
                 project,
                 provider.ProviderType,
-                articleRow.Slug,
-                articleUrl,
+                slugForRows,
+                articleUrl.Length > 0 ? articleUrl : blogUrl,
                 section,
                 cancellationToken);
         }
@@ -538,6 +653,14 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             throw new ContentGenerationException("Generate the pillar body (Step 2) before continuing.");
         }
 
+        return row;
+    }
+
+    private static GeneratedContent? TryGetCompletePillar(Project project)
+    {
+        var row = project.GeneratedContents.FirstOrDefault(c => c.ContentType == GeneratedContentType.TechnicalArticle);
+        if (row is null || row.Body is null || row.WordCount < 200)
+            return null;
         return row;
     }
 
