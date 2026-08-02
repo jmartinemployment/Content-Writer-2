@@ -124,7 +124,8 @@ public class ProjectsController : ControllerBase
 
         return new ProjectDetailResponse(
             project.Id, project.ClientId, project.Name, project.ProjectUrl, project.TargetKeyword, project.Department, project.Status,
-            project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet, project.Notes);
+            project.PreferredProvider, project.UseExactKeywordAsTitle, crawl, keywordSources, generatedContent, contentSet, project.Notes,
+            project.ContentApprovedAtUtc);
     }
 
     private static ProjectSummaryResponse ToSummary(Project project) => new(

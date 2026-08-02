@@ -25,6 +25,9 @@ public class Project
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAtUtc { get; set; }
 
+    /// <summary>Content Creator: operator content-approval timestamp (gates Repurpose / Mix).</summary>
+    public DateTime? ContentApprovedAtUtc { get; set; }
+
     /// <summary>Back-reference to the owning row; not serialized (ClientId is the durable FK) — a populated value here forms a JSON cycle through Client.Projects.</summary>
     [JsonIgnore]
     public Client? Client { get; set; }

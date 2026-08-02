@@ -17,7 +17,7 @@ public record ProjectDetailResponse(
     Guid Id, Guid ClientId, string Name, string ProjectUrl, string TargetKeyword, string Department, ProjectStatus Status,
     LlmProviderType PreferredProvider, bool UseExactKeywordAsTitle, CrawlSummaryResponse? Crawl,
     List<KeywordSourceResponse> KeywordSources, List<GeneratedContentResponse> GeneratedContent,
-    GeneratedContentSet? ContentSet, string? Notes);
+    GeneratedContentSet? ContentSet, string? Notes, DateTime? ContentApprovedAtUtc = null);
 
 public record CrawlSummaryResponse(
     string SiteName, int PagesCrawled, string DetectedTone, string DetectedFocus,
