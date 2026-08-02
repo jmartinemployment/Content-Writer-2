@@ -124,6 +124,15 @@ public interface IContentPromptBuilder
         string blogUrl,
         IReadOnlyList<ImagePromptSectionTarget> sections);
 
+    /// <summary>
+    /// Content Creator: standalone image prompt (topic + notes, optional artifact context).
+    /// Same visual style contract as section image prompts — prompt text only, not pixels.
+    /// </summary>
+    ChatCompletionRequest BuildStandaloneImagePrompt(
+        string topic,
+        string? notes,
+        string? artifactContext);
+
     ChatCompletionRequest BuildToolBodyPrompt(
         ProjectGenerationContext context,
         ArticleMetadataDraft pillarMetadata,
@@ -1133,6 +1142,46 @@ public class ContentPromptBuilder : IContentPromptBuilder
             Messages: new List<ChatMessage> { new(ChatRole.System, system), new(ChatRole.User, user.ToString()) },
             Temperature: 0.7,
             MaxOutputTokens: 8192);
+    }
+
+    public ChatCompletionRequest BuildStandaloneImagePrompt(
+        string topic,
+        string? notes,
+        string? artifactContext)
+    {
+        var system = new StringBuilder()
+            .AppendLine("You write ONE AI image-generation prompt for a B2B content figure.")
+            .AppendLine("Prompt text only — not pixels.")
+            .AppendLine()
+            .AppendLine("VISUAL STYLE:")
+            .AppendLine("- Flat vector / infographic, professional fintech or B2B tech aesthetic.")
+            .AppendLine($"- Default size: {ImagePromptDefaults.PillarWidth}x{ImagePromptDefaults.PillarHeight}. Style: {ImagePromptDefaults.PillarStylePreset}.")
+            .AppendLine("- NO readable text, logos, or watermarks in the image.")
+            .AppendLine("- Prefer a wider establishing-shot hero composition that evokes the topic's theme and stakes.")
+            .AppendLine()
+            .AppendLine("Respond with ONLY a single valid JSON object — no markdown fences:")
+            .AppendLine(
+                "{\"prompt\": string, \"style\": string, \"negativePrompt\": string, \"aspectRatio\": string, \"imageModel\": string, \"stylePreset\": string, \"notes\": string}")
+            .AppendLine($"Use imageModel \"{ImagePromptDefaults.DefaultImageModel}\" and stylePreset \"Illustration\" unless the brief clearly requires otherwise.")
+            .AppendLine("aspectRatio should be \"16:9\" for hero figures unless notes specify otherwise.")
+            .ToString();
+
+        var user = new StringBuilder()
+            .AppendLine($"Topic/title: {topic.Trim()}")
+            .AppendLine(BrandTones.ForWebpages());
+        if (!string.IsNullOrWhiteSpace(notes))
+            user.AppendLine($"Notes / brief: {notes.Trim()}");
+        if (!string.IsNullOrWhiteSpace(artifactContext))
+        {
+            var clipped = artifactContext.Length > 6000 ? artifactContext[..6000] : artifactContext;
+            user.AppendLine("Artifact context (ground the visual in this draft):");
+            user.AppendLine(clipped);
+        }
+
+        return new ChatCompletionRequest(
+            Messages: [new(ChatRole.System, system), new(ChatRole.User, user.ToString())],
+            Temperature: 0.7,
+            MaxOutputTokens: 1024);
     }
 
     private const string ToolMetadataJsonContract =

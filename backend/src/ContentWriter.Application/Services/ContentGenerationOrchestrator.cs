@@ -430,28 +430,26 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     public async Task<GeneratedContentSet> GenerateSocialAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
-        var articleRow = RequireCompletePillar(project);
+        var (source, sourceUrl, slugBase) = ResolveRepurposeSource(project);
 
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
-        var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating social content for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
         RemoveGeneratedContents(project, GeneratedContentType.SocialFacebook, GeneratedContentType.SocialLinkedIn);
 
-        var facebook = await GenerateSocialPostAsync(provider, context, article, articleUrl, "Facebook", cancellationToken);
-        var linkedIn = await GenerateSocialPostAsync(provider, context, article, articleUrl, "LinkedIn", cancellationToken);
+        var facebook = await GenerateSocialPostAsync(provider, context, source, sourceUrl, "Facebook", cancellationToken);
+        var linkedIn = await GenerateSocialPostAsync(provider, context, source, sourceUrl, "LinkedIn", cancellationToken);
 
         await AddContentAsync(project, provider.ProviderType, new GeneratedContent
         {
             ProjectId = project.Id,
             ContentType = GeneratedContentType.SocialFacebook,
-            Title = $"{article.Title} (Facebook)",
-            Slug = $"{articleRow.Slug}-facebook",
+            Title = $"{source.Title} (Facebook)",
+            Slug = $"{slugBase}-facebook",
             Body = ContentDocumentText.FromPlainText(facebook.Text),
-            RelatedArticleUrl = articleUrl,
+            RelatedArticleUrl = sourceUrl,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
         }, cancellationToken);
@@ -460,10 +458,10 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         {
             ProjectId = project.Id,
             ContentType = GeneratedContentType.SocialLinkedIn,
-            Title = $"{article.Title} (LinkedIn)",
-            Slug = $"{articleRow.Slug}-linkedin",
+            Title = $"{source.Title} (LinkedIn)",
+            Slug = $"{slugBase}-linkedin",
             Body = ContentDocumentText.FromPlainText(linkedIn.Text),
-            RelatedArticleUrl = articleUrl,
+            RelatedArticleUrl = sourceUrl,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
         }, cancellationToken);
@@ -475,19 +473,17 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
     public async Task<GeneratedContentSet> GenerateColdOutreachAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         var project = await LoadProjectForGenerationAsync(projectId, cancellationToken);
-        var articleRow = RequireCompletePillar(project);
+        var (source, sourceUrl, _) = ResolveRepurposeSource(project);
 
         var context = BuildContext(project);
         var provider = _providerFactory.Get(project.PreferredProvider);
-        var article = GeneratedContentSetAssembler.ToArticleDraft(articleRow);
-        var articleUrl = CombineUrl(context.ArticleBaseUrl, context.Department, articleRow.Slug);
 
         _logger.LogInformation("Generating cold outreach email for project {ProjectId} via {Provider}", projectId, provider.ProviderType);
 
         RemoveGeneratedContents(project, GeneratedContentType.EmailColdOutreach);
 
         var result = await provider.CompleteAsync(
-            _promptBuilder.BuildColdOutreachPrompt(context, article, articleUrl),
+            _promptBuilder.BuildColdOutreachPrompt(context, source, sourceUrl),
             cancellationToken);
         var draft = LlmResponseJsonParser.ParseColdOutreach(result.Content, "cold outreach email");
         var wordCount = draft.BodyText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
@@ -508,10 +504,10 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
             ProjectId = project.Id,
             ContentType = GeneratedContentType.EmailColdOutreach,
             Title = draft.Subject,
-            Slug = $"{articleRow.Slug}-cold-outreach",
+            Slug = $"{SlugHelper.Slugify(source.Title)}-cold-outreach",
             Body = ContentDocumentText.FromPlainText(draft.BodyText),
             MetaDescription = draft.CtaLabel,
-            RelatedArticleUrl = articleUrl,
+            RelatedArticleUrl = sourceUrl,
             WordCount = wordCount,
             GeneratedByProvider = provider.ProviderType,
             GeneratedByModel = ResolveModelName(project.PreferredProvider)
@@ -662,6 +658,41 @@ public class ContentGenerationOrchestrator : IContentGenerationOrchestrator
         if (row is null || row.Body is null || row.WordCount < 200)
             return null;
         return row;
+    }
+
+    /// <summary>
+    /// Content Creator: social/cold outreach can source from pillar or standalone blog.
+    /// </summary>
+    private (ArticleDraft Source, string SourceUrl, string SlugBase) ResolveRepurposeSource(Project project)
+    {
+        var context = BuildContext(project);
+        var pillar = TryGetCompletePillar(project);
+        if (pillar is not null)
+        {
+            return (
+                GeneratedContentSetAssembler.ToArticleDraft(pillar),
+                CombineUrl(context.ArticleBaseUrl, context.Department, pillar.Slug),
+                pillar.Slug);
+        }
+
+        var blog = project.GeneratedContents.FirstOrDefault(c => c.ContentType == GeneratedContentType.BlogPost)
+            ?? throw new ContentGenerationException(
+                "Generate a pillar body or a blog before social / cold outreach.");
+        if (blog.Body is null || blog.WordCount < 100)
+            throw new ContentGenerationException("Generate a complete blog (or pillar) before social / cold outreach.");
+
+        var blogDraft = GeneratedContentSetAssembler.ToBlogDraft(blog);
+        var asArticle = new ArticleDraft(
+            blogDraft.Title,
+            blogDraft.MetaDescription,
+            blogDraft.Body,
+            blogDraft.Keywords,
+            blogDraft.WordCount,
+            blogDraft.SectionOutline);
+        return (
+            asArticle,
+            CombineUrl(context.BlogBaseUrl, context.Department, blog.Slug),
+            blog.Slug);
     }
 
     private static ArticleMetadataDraft ToMetadataDraft(GeneratedContent row) => new(
